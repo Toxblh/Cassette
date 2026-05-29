@@ -1,0 +1,126 @@
+name: macOS Build
+
+on:
+  push:
+    branches: [ci]
+    tags: ['v*']
+
+jobs:
+  build-macos:
+    name: Build macOS App Bundle
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - name: Cache Homebrew downloads
+        uses: actions/cache@v4
+        with:
+          path: ~/Library/Caches/Homebrew/downloads
+          key: homebrew-${{ runner.arch }}-${{ hashFiles('macos/build.sh') }}
+          restore-keys: |
+            homebrew-${{ runner.arch }}-
+
+      - name: Install dependencies
+        run: |
+          brew install \
+            meson ninja pkg-config \
+            vala blueprint-compiler \
+            dylibbundler librsvg \
+            gtk4 libadwaita \
+            libgee libsoup json-glib \
+            gstreamer glib-networking \
+            desktop-file-utils
+
+      - name: Fix Vala vapi symlinks
+        run: |
+          BREW_PREFIX="$(brew --prefix)"
+          VALA_VERSION="$(valac --version | awk '{print $2}')"
+          VALA_MINOR="${VALA_VERSION%.*}"
+          VALA_VAPI_SRC="$BREW_PREFIX/share/vala/vapi"
+          VALA_VAPI_DST="$BREW_PREFIX/Cellar/vala/${VALA_VERSION}/share/vala-${VALA_MINOR}/vapi"
+          if [ -d "$VALA_VAPI_DST" ]; then
+            for f in "$VALA_VAPI_SRC"/*; do
+              name="$(basename "$f")"
+              [ ! -e "$VALA_VAPI_DST/$name" ] && ln -s "$f" "$VALA_VAPI_DST/$name"
+            done
+            echo "Linked vapi files into $VALA_VAPI_DST"
+          else
+            echo "::warning::valac vapi dir not found: $VALA_VAPI_DST"
+          fi
+
+      - name: Set up GStreamer plugin directory (no GTK3 sink)
+        run: |
+          BREW_PREFIX="$(brew --prefix)"
+          GST_PLUGIN_DIR="$BREW_PREFIX/lib/gstreamer-1.0-gtk4"
+          mkdir -p "$GST_PLUGIN_DIR"
+          for f in "$BREW_PREFIX"/Cellar/gstreamer/*/lib/gstreamer-1.0/libgst*.dylib; do
+            [ -f "$f" ] || continue
+            name="$(basename "$f")"
+            [ "$name" != "libgstgtk.dylib" ] && ln -sf "$f" "$GST_PLUGIN_DIR/$name"
+          done
+          echo "GStreamer plugin dir: $GST_PLUGIN_DIR"
+          ls "$GST_PLUGIN_DIR" | wc -l | xargs echo "plugins:"
+
+      - name: Configure with Meson
+        run: |
+          BREW_PREFIX="$(brew --prefix)"
+          XDG_DATA_DIRS="$BREW_PREFIX/share" \
+          PKG_CONFIG_PATH="$BREW_PREFIX/lib/pkgconfig:$BREW_PREFIX/share/pkgconfig" \
+          meson setup build -Dwith_webkit=false
+
+      - name: Build
+        run: |
+          BREW_PREFIX="$(brew --prefix)"
+          XDG_DATA_DIRS="$BREW_PREFIX/share" ninja -C build
+
+      - name: Create .app bundle
+        run: ./macos/bundle.sh
+
+      - name: Get version
+        id: version
+        run: |
+          VERSION=$(grep "^  version:" meson.build | sed "s/.*'\(.*\)'.*/\1/")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Version: $VERSION"
+
+      - name: Create DMG
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          DMG="Cassette-${VERSION}-macos.dmg"
+          hdiutil create \
+            -volname "Cassette" \
+            -srcfolder "Cassette.app" \
+            -ov -format UDZO \
+            "$DMG"
+          echo "Created: $DMG ($(du -sh "$DMG" | cut -f1))"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Cassette-${{ steps.version.outputs.version }}-macos
+          path: "Cassette-*.dmg"
+          retention-days: 14
+
+      - name: Upload to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          DMG="Cassette-${VERSION}-macos.dmg"
+          TAG="${{ github.ref_name }}"
+
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release found for $TAG — uploading $DMG..."
+            gh release upload "$TAG" "$DMG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --clobber
+            echo "Upload complete."
+          else
+            echo "No release found for tag $TAG — skipping upload."
+            echo "Create a release for $TAG to enable auto-upload."
+          fi
