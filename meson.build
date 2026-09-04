@@ -9,6 +9,8 @@ project(
 i18n = import('i18n')
 gnome = import('gnome')
 
+is_android = host_machine.system() == 'android'
+
 gtk = dependency('gtk4', version: '>= 4.15')
 libadwaita = dependency('libadwaita-1', version: '>= 1.6')
 threads = dependency('threads')
@@ -18,8 +20,10 @@ jsonglib = dependency('json-glib-1.0')
 sqlite3 = dependency('sqlite3')
 gee = dependency('gee-0.8')
 libxml = dependency('libxml-2.0')
-gstreamer = dependency('gstreamer-1.0')
-webkit = dependency('webkitgtk-6.0', required: get_option('with_webkit'))
+# Android has neither: the stream backend is android.media.MediaPlayer
+# (src/client/player/android-backend.vala) and sign-in is a WebView activity.
+gstreamer = dependency('gstreamer-1.0', required: not is_android)
+webkit = dependency('webkitgtk-6.0', required: get_option('with_webkit') and not is_android)
 gio = dependency('gio-2.0', version: '>= 2.72')
 
 app_id = 'space.rirusha.Cassette'
@@ -66,12 +70,22 @@ cassette_dependencies = [
   sqlite3,
   gee,
   libxml,
-  gstreamer,
   gio,
 ]
 
-if not get_option('with_webkit') and host_machine.system() != 'darwin'
-  error('with_webkit=false is only supported on macOS (native WKWebView is darwin-only)')
+if gstreamer.found()
+  cassette_dependencies += gstreamer
+endif
+
+if not get_option('with_webkit') and host_machine.system() not in ['darwin', 'android']
+  error('with_webkit=false is only supported on macOS and Android')
+endif
+
+if is_android
+  # TLS. GIO cannot load modules out of an APK, so glib-networking's openssl
+  # backend is linked statically and registered by hand in main.vala.
+  subproject('glib-networking', default_options: ['default_library=static'])
+  cassette_dependencies += dependency('gioopenssl')
 endif
 
 if host_machine.system() == 'darwin'
@@ -92,10 +106,12 @@ config_h_dir = include_directories('.')
 
 subdir('po')
 subdir('src')
-subdir('tests')
+if not is_android
+  subdir('tests')
+endif
 
 gnome.post_install(
   glib_compile_schemas: true,
-  gtk_update_icon_cache: true,
-  update_desktop_database: true,
+  gtk_update_icon_cache: not is_android,
+  update_desktop_database: not is_android,
 )

@@ -68,9 +68,15 @@ public class Cassette.VolumeButton : CustomMenuButton {
     double adjustment_actual_lower = 0.0;
 
     Gtk.EventControllerScroll se;
-    Settings touchpad_settings = new Settings ("org.gnome.desktop.peripherals.touchpad");
+    // GNOME-only schema: absent on Android, macOS and non-GNOME desktops.
+    Settings? touchpad_settings = null;
 
     construct {
+        var schema_source = SettingsSchemaSource.get_default ();
+        if (schema_source != null && schema_source.lookup ("org.gnome.desktop.peripherals.touchpad", true) != null) {
+            touchpad_settings = new Settings ("org.gnome.desktop.peripherals.touchpad");
+        }
+
         adjustment = new Gtk.Adjustment (50.0, adjustment_actual_lower, adjustment_actual_upper + 1.0, 5.0, 5.0, 1.0);
 
         add_css_class ("flat");
@@ -105,7 +111,8 @@ public class Cassette.VolumeButton : CustomMenuButton {
                     break;
 
                 case Gdk.ScrollUnit.SURFACE:
-                    change_volume ((touchpad_settings.get_boolean ("natural-scroll") ? -dy : dy) * MUL);
+                    bool natural = touchpad_settings != null && touchpad_settings.get_boolean ("natural-scroll");
+                    change_volume ((natural ? -dy : dy) * MUL);
                     break;
 
                 default:

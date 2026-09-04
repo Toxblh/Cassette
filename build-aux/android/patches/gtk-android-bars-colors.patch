@@ -1,0 +1,146 @@
+diff --git a/gdk/android/glue/java/org/gtk/android/ToplevelActivity.java b/gdk/android/glue/java/org/gtk/android/ToplevelActivity.java
+index 09889b9..b2bf3d6 100644
+--- a/gdk/android/glue/java/org/gtk/android/ToplevelActivity.java
++++ b/gdk/android/glue/java/org/gtk/android/ToplevelActivity.java
+@@ -27,7 +27,9 @@ import android.content.Intent;
+ import android.content.pm.ActivityInfo;
+ import android.content.res.Configuration;
+ import android.graphics.Bitmap;
++import android.graphics.Canvas;
+ import android.graphics.Insets;
++import android.graphics.Paint;
+ import android.graphics.PixelFormat;
+ import android.graphics.RectF;
+ import android.net.Uri;
+@@ -349,8 +351,33 @@ public class ToplevelActivity extends Activity {
+ 
+ 		private Insets insets = Insets.NONE;
+ 
++		// Colours painted behind the system bars: the application can ship
++		// "gtk_bars_top" / "gtk_bars_bottom" colour resources (with -night
++		// variants) matching its header bar and bottom bar; otherwise both
++		// fall back to the colour GDK picks for the theme.
++		private int barsTopColor = 0;
++		private int barsBottomColor = 0;
++		private final Paint barsPaint = new Paint();
++
+ 		public ToplevelView() {
+ 			super(ToplevelActivity.this);
++			setWillNotDraw(false);
++		}
++
++		public void setBarsColors(int top, int bottom) {
++			barsTopColor = top;
++			barsBottomColor = bottom;
++			setBackgroundColor(bottom);
++			invalidate();
++		}
++
++		@Override
++		protected void onDraw(Canvas canvas) {
++			super.onDraw(canvas);
++			if (barsTopColor != barsBottomColor && insets.top > 0) {
++				barsPaint.setColor(barsTopColor);
++				canvas.drawRect(0, 0, getWidth(), insets.top, barsPaint);
++			}
+ 		}
+ 
+ 		@Override
+@@ -394,6 +421,7 @@ public class ToplevelActivity extends Activity {
+ 		public WindowInsets onApplyWindowInsets(WindowInsets insets) {
+ 			this.insets = insets.getInsets(WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout() | WindowInsets.Type.ime());
+ 			requestLayout();
++			invalidate();
+ 			return WindowInsets.CONSUMED;
+ 		}
+ 
+@@ -452,6 +480,9 @@ public class ToplevelActivity extends Activity {
+ 
+ 		this.view = new ToplevelView();
+ 		setContentView(this.view);
++		synchronized (liveActivities) {
++			liveActivities.add(this);
++		}
+ 
+ 		long[] possibleIdentifiers = {
+ 			savedInstanceState != null ? savedInstanceState.getLong(toplevelIdentifierKey, 0) : 0L,
+@@ -543,6 +574,9 @@ public class ToplevelActivity extends Activity {
+ 
+ 	@Override
+ 	protected void onDestroy() {
++		synchronized (liveActivities) {
++			liveActivities.remove(this);
++		}
+ 		if (isFinishing()) // TODO: investigate possibility unconditionally running this
+ 			GlibContext.runOnMain(this::notifyDestroy);
+ 		super.onDestroy();
+@@ -553,20 +587,60 @@ public class ToplevelActivity extends Activity {
+ 		GlibContext.runOnMain(() -> notifyActivityResult(requestCode, resultCode, data));
+ 	}
+ 
++	// Colours behind the system bars, settable at runtime by the application
++	// (e.g. when the bottom-most toolbar changes); 0 means "use the resources".
++	private static int barsOverrideTop = 0;
++	private static int barsOverrideBottom = 0;
++	private static final java.util.Set<ToplevelActivity> liveActivities =
++			java.util.Collections.newSetFromMap(new java.util.WeakHashMap<>());
++	private int lastGdkBarsColor = 0;
++
++	@Keep
++	public static void setBarsColors(int top, int bottom) {
++		barsOverrideTop = top;
++		barsOverrideBottom = bottom;
++		ToplevelActivity[] activities;
++		synchronized (liveActivities) {
++			activities = liveActivities.toArray(new ToplevelActivity[0]);
++		}
++		for (ToplevelActivity a : activities)
++			a.runOnUiThread(a::applyBarsColors);
++	}
++
++	private void applyBarsColors() {
++		if (view == null) return;
++		int fallback = lastGdkBarsColor;
++		int top = barsOverrideTop != 0 ? barsOverrideTop : resolveBarsColor("gtk_bars_top", fallback);
++		int bottom = barsOverrideBottom != 0 ? barsOverrideBottom : resolveBarsColor("gtk_bars_bottom", fallback);
++		view.setBarsColors(top, bottom);
++
++		WindowInsetsController controller = getWindow().getInsetsController();
++		int bars = WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS | WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS;
++		int appearance = (isLightColor(top) ? WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS : 0)
++		               | (isLightColor(bottom) ? WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS : 0);
++		controller.setSystemBarsAppearance(appearance, bars);
++	}
++
++	// Taken from SO: https://stackoverflow.com/a/3943023
++	// Licensed under CC-BY-SA 4.0
++	private static boolean isLightColor(int color) {
++		return (((color >> 16) & 0xFF) * 0.299 +
++		        ((color >>  8) & 0xFF) * 0.587 +
++		        ((color >>  0) & 0xFF) * 0.114) > 186;
++	}
++
++	private int resolveBarsColor(String name, int fallback) {
++		int id = getResources().getIdentifier(name, "color", getPackageName());
++		return id != 0 ? getColor(id) : fallback;
++	}
++
+ 	public void postWindowConfiguration(int color, boolean fullscreen) {
+ 		runOnUiThread(() -> {
+ 			Window window = getWindow();
+ 			WindowInsetsController controller = window.getInsetsController();
+ 
+-			view.setBackgroundColor(color);
+-			// Taken from SO: https://stackoverflow.com/a/3943023
+-			// Licensed under CC-BY-SA 4.0
+-			boolean dark_fg = (((color >> 16) & 0xFF) * 0.299 +
+-			                   ((color >>  8) & 0xFF) * 0.587 +
+-			                   ((color >>  0) & 0xFF) * 0.114) > 186;
+-
+-			int bars = WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS | WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS;
+-			controller.setSystemBarsAppearance(dark_fg ? bars : 0, bars);
++			lastGdkBarsColor = color;
++			applyBarsColors();
+ 
+ 			this.fullscreenState = fullscreen;
+ 			if (fullscreen) {

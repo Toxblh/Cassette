@@ -64,7 +64,7 @@ cassette_client_sources = files(
   'player/mods/flow.vala',
   'player/mods/local.vala',
   'player/mods/track-list.vala',
-  'player/mpris.vala',
+  'player/backend.vala',
   'player/player.vala',
 
   'talkers/abstract-talker.vala',
@@ -78,3 +78,15 @@ cassette_client_sources = files(
   'utils.vala',
   'yam-object.vala',
 )
+# The stream backend is the only platform-specific part of the client.
+# MPRIS is D-Bus and has no meaning on Android.
+if host_machine.system() == 'android'
+  cassette_client_sources += files(
+    'player/android-backend.vala',
+  )
+else
+  cassette_client_sources += files(
+    'player/gst-backend.vala',
+    'player/mpris.vala',
+  )
+endif

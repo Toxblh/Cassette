@@ -41,8 +41,10 @@ if appstreamcli.found()
   test('Validate appstream file', appstreamcli, args: ['validate', appstream_file])
 endif
 
+# install_tag: pixiewood packs only the 'runtime' tag into the APK.
 install_data('@0@.gschema.xml'.format(app_id),
-  install_dir: join_paths(get_option('datadir'), 'glib-2.0', 'schemas')
+  install_dir: join_paths(get_option('datadir'), 'glib-2.0', 'schemas'),
+  install_tag: 'runtime',
 )
 
 compile_schemas = find_program('glib-compile-schemas', required: false)
@@ -52,8 +54,7 @@ if compile_schemas.found()
   args: ['--strict', '--dry-run', meson.current_source_dir()])
 endif
 
-blueprints = custom_target('blueprints',
-  input: files(
+blueprint_sources = files(
     'ui/account-info-dialog.blp',
     'ui/action-card-custom.blp',
     'ui/action-card-station.blp',
@@ -83,10 +84,29 @@ blueprints = custom_target('blueprints',
     'ui/volume-button.blp',
     'ui/wave-settings.blp',
     'ui/window.blp',
-  ),
-  output: '.',
-  command: [find_program('blueprint-compiler'), 'batch-compile', '@OUTPUT@', '@CURRENT_SOURCE_DIR@', '@INPUT@'],
 )
+
+if is_android
+  # blueprint-compiler validates against the host's Gtk/Adw typelibs, and the
+  # build image has none new enough for these files. docker-build.sh compiles
+  # them on the host into build-aux/android/ui; this just copies the result.
+  blueprints = custom_target('blueprints',
+    input: blueprint_sources,
+    output: '.',
+    command: [
+      find_program('python3'), '-c',
+      'import shutil, sys; shutil.copytree(sys.argv[1], sys.argv[2], dirs_exist_ok=True)',
+      meson.project_source_root() / 'build-aux' / 'android' / 'ui',
+      '@OUTPUT@',
+    ],
+  )
+else
+  blueprints = custom_target('blueprints',
+    input: blueprint_sources,
+    output: '.',
+    command: [find_program('blueprint-compiler'), 'batch-compile', '@OUTPUT@', '@CURRENT_SOURCE_DIR@', '@INPUT@'],
+  )
+endif
 
 resource_files = files('@0@.gresource.xml'.format(app_id))
 resources = gnome.compile_resources(

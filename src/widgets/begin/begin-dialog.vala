@@ -35,7 +35,10 @@ namespace Cassette {
             begin_view.local_choosed.connect (force_close);
 
             can_close = false;
-            close_attempt.connect (application.quit);
+            close_attempt.connect (() => {
+                Logger.info ("Begin dialog close attempt, quitting");
+                application.quit ();
+            });
         }
     }
 }

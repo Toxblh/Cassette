@@ -111,7 +111,7 @@ namespace Cassette {
 
             Cassette.Client.init (is_devel);
 
-#if !MACOS
+#if !MACOS && !ANDROID
             Cassette.Client.Mpris.mpris.quit_triggered.connect (() => {
                 quit ();
             });
@@ -136,6 +136,16 @@ namespace Cassette {
             });
 
             player.current_track_finish_loading.connect (show_now_playing_notif);
+
+            window_removed.connect ((win) => {
+                Logger.info ("Window removed: %s".printf (win.get_type ().name ()));
+            });
+            shutdown.connect (() => {
+                Logger.info ("Application shutdown");
+            });
+            player.playback_error.connect ((message) => {
+                show_message (_("Playback failed: %s").printf (message));
+            });
 
             _application_state = (ApplicationState) settings.get_enum ("application-state");
 

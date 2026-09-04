@@ -125,6 +125,25 @@ cassette_vala_args = [
   '--vapidir', meson.current_source_dir()
 ] + webkit_vala_args
 
+if is_android
+  # The libraries come from subprojects, so meson passes no --pkg for them;
+  # valac finds the vapis in its own vapidir, except libadwaita-1 and
+  # libsoup-3.0 which the libraries themselves ship — snapshots of those
+  # live in build-aux/android/vapi.
+  cassette_vala_args += [
+    '--define=ANDROID',
+    '--vapidir', meson.project_source_root() / 'build-aux' / 'android' / 'vapi',
+    '--pkg=gtk4',
+    '--pkg=libadwaita-1',
+    '--pkg=libsoup-3.0',
+    '--pkg=json-glib-1.0',
+    '--pkg=gdk-pixbuf-2.0',
+    '--pkg=sqlite3',
+    '--pkg=libxml-2.0',
+    '--pkg=gio-2.0',
+  ]
+endif
+
 cassette_c_args = [
   '-include', 'config.h',
 ]
@@ -157,13 +176,36 @@ if host_machine.system() == 'darwin'
   endif
 endif
 
+android_inc = []
+exe_kwargs = {}
+if is_android
+  cassette_sources += files(
+    'android/android-auth.c',
+    'android/android-auth.vapi',
+    'android/android-bars.c',
+    'android/android-bars.vapi',
+    'android/android-jni.c',
+    'android/android-now-playing.c',
+    'android/android-now-playing.vapi',
+    'android/android-player.c',
+    'android/android-player.vapi',
+    'android/now-playing.vala',
+  )
+  cassette_link_args += ['-llog']
+  android_inc = include_directories('android')
+  # pixiewood: the executable becomes lib<name>.so and its main() is looked
+  # up by the GTK Android runtime.
+  exe_kwargs = {'android_exe_type': 'application'}
+endif
+
 executable(
   meson.project_name(),
   cassette_sources,
-  include_directories: [config_h_dir, macos_inc],
+  include_directories: [config_h_dir, macos_inc, android_inc],
   vala_args: cassette_vala_args,
   c_args: cassette_c_args,
   link_args: cassette_link_args,
   dependencies: cassette_dependencies,
   install: true,
+  kwargs: exe_kwargs,
 )

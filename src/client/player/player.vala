@@ -48,13 +48,13 @@ public class Cassette.Client.Player.Player : Object {
 
             switch (_state) {
                 case State.NONE:
-                    playbin.set_state (Gst.State.NULL);
+                    backend.stop ();
                     break;
                 case State.PLAYING:
-                    playbin.set_state (Gst.State.PLAYING);
+                    backend.play ();
                     break;
                 case State.PAUSED:
-                    playbin.set_state (Gst.State.PAUSED);
+                    backend.pause ();
                     break;
             }
         }
@@ -94,9 +94,7 @@ public class Cassette.Client.Player.Player : Object {
 
     public double playback_pos_sec {
         get {
-            int64 cur;
-            playbin.query_position (Gst.Format.TIME, out cur);
-            return (double) cur / Gst.SECOND;
+            return backend.position_ms / 1000.0;
         }
     }
 
@@ -104,9 +102,7 @@ public class Cassette.Client.Player.Player : Object {
 
     public int64 playback_pos_ms {
         get {
-            int64 cur;
-            playbin.query_position (Gst.Format.TIME, out cur);
-            return cur / Gst.MSECOND;
+            return backend.position_ms;
         }
     }
 
@@ -199,6 +195,14 @@ public class Cassette.Client.Player.Player : Object {
 
     public signal void playback_callback (double playback_pos_sec);
 
+    /**
+     * Feedback.
+     * Triggered when the backend fails to play the current track
+     * (expired stream link, unsupported format, network error).
+     * The track is stopped; the UI may show the message.
+     */
+    public signal void playback_error (string message);
+
     public signal void mode_inited ();
 
     public Mode mode { get; private set; }
@@ -207,19 +211,30 @@ public class Cassette.Client.Player.Player : Object {
 
     string play_id { get; set; default = ""; }
 
-    Gst.Element playbin;
+    PlayerBackend backend;
 
     construct {
-        init (null);
-
         mode = new Empty (this);
 
-        playbin = Gst.ElementFactory.make ("playbin", null);
-        var bus = playbin.get_bus ();
+#if ANDROID
+        backend = new AndroidPlayerBackend ();
+#else
+        backend = new GstPlayerBackend ();
+#endif
 
-        bus.add_signal_watch ();
-        bus.message["eos"].connect ((bus, message) => {
+        backend.eos.connect (() => {
             next_natural ();
+        });
+        backend.error.connect (on_backend_error);
+        backend.suspended.connect (() => {
+            if (state == State.PLAYING) {
+                pause ();
+            }
+        });
+        backend.resumed.connect (() => {
+            if (state == State.PAUSED) {
+                play ();
+            }
         });
 
         settings.bind ("repeat-mode", this, "repeat-mode", SettingsBindFlags.DEFAULT);
@@ -232,10 +247,10 @@ public class Cassette.Client.Player.Player : Object {
             current_track_loading = false;
         });
 
-        bind_property ("volume", playbin, "volume", BindingFlags.BIDIRECTIONAL | BindingFlags.SYNC_CREATE);
+        bind_property ("volume", backend, "volume", BindingFlags.BIDIRECTIONAL | BindingFlags.SYNC_CREATE);
         settings.bind ("volume", this, "volume", SettingsBindFlags.DEFAULT);
 
-        bind_property ("mute", playbin, "mute", BindingFlags.BIDIRECTIONAL | BindingFlags.SYNC_CREATE);
+        bind_property ("mute", backend, "mute", BindingFlags.BIDIRECTIONAL | BindingFlags.SYNC_CREATE);
         settings.bind ("mute", this, "mute", SettingsBindFlags.DEFAULT);
 
         next_track_loaded.connect (() => {
@@ -282,8 +297,14 @@ public class Cassette.Client.Player.Player : Object {
         update_player ();
     }
 
-    void init (string[]? args) {
-        Gst.init (ref args);
+    void on_backend_error (string message) {
+        Logger.warning ("Playback error: %s".printf (message));
+
+        if (mode.get_current_track_info () != null) {
+            stop ();
+        }
+
+        playback_error (message);
     }
 
     public void seek (int64 ms) {
@@ -292,7 +313,7 @@ public class Cassette.Client.Player.Player : Object {
         }
 
         update_player ();
-        playbin.seek_simple (Gst.Format.TIME, Gst.SeekFlags.FLUSH | Gst.SeekFlags.KEY_UNIT, ms * Gst.MSECOND);
+        backend.seek (ms);
     }
 
     public void start_flow (
@@ -400,7 +421,7 @@ public class Cassette.Client.Player.Player : Object {
     }
 
     void track_stop (bool natural) {
-        playbin.set_property ("uri", Value (Type.STRING));
+        backend.set_uri (null);
 
         state = State.NONE;
 
@@ -509,9 +530,9 @@ public class Cassette.Client.Player.Player : Object {
         string? track_uri = yield Cachier.get_track_uri (current_track.id);
 
         if (track_uri == null) {
-            playbin.set_property ("uri", Value (Type.STRING));
+            backend.set_uri (null);
         } else {
-            playbin.set_property ("uri", track_uri);
+            backend.set_uri (track_uri);
 
             play ();
             storager.clear_temp_track ();

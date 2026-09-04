@@ -179,6 +179,8 @@ namespace Cassette.Client {
 
 #if MACOS
         MacOsNowPlaying.init ();
+#elif ANDROID
+        AndroidNowPlaying.init ();
 #else
         Mpris.init ();
 #endif

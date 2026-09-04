@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Pixiewood manifest for Cassette. Patterns: GeopJr/Tuba build-aux/android/pixiewood.xml
+  (Vala app, same libsoup/openssl/json-glib/libgee stack) and Matras.
+
+  Only aarch64: the whole GTK stack is compiled from source, a second
+  architecture doubles the time without helping debugging. x86_64 can be
+  added to <architectures> later (needed only for an x86 emulator).
+-->
+<app xmlns="https://sp1rit.arpa/pixiewood/" xmlns:xi="http://www.w3.org/2001/XInclude">
+  <metainfo vercalc="sem121010">
+    <!-- build://: the metainfo is an i18n.merge_file output, pixiewood runs
+         ninja for it before generate. The source needs
+         xmlns="https://specifications.freedesktop.org/metainfo/1.0" or
+         generate dies with "Unable to find component id". -->
+    <xi:include href="build://aarch64/data/space.rirusha.Cassette.metainfo.xml" parse="xml"/>
+  </metainfo>
+
+  <style>
+    <theme name="adw"/>
+    <icon type="generate">
+      <drawable target="foreground" scale=".5" type="svg"
+                path="src://build-aux/android/space.rirusha.Cassette.android-foreground.svg"/>
+      <!-- brand colour from the metainfo <branding> -->
+      <color target="background">#fee372</color>
+      <drawable target="monochrome" scale=".45" type="svg"
+                path="src://data/icons/hicolor/symbolic/apps/space.rirusha.Cassette-symbolic.svg"/>
+    </icon>
+  </style>
+
+  <dependencies>
+    <!-- hack: exports g_set_user_dirs for gdkandroidruntime.c.
+         pthread-restrictions: bionic dislikes pthread_attr_setstacksize. -->
+    <glib>
+      <patch>hack</patch>
+      <patch>pthread-restrictions</patch>
+    </glib>
+    <harfbuzz/>
+    <fontconfig/>
+    <gtk/>
+    <libadwaita/>
+  </dependencies>
+
+  <build target="cassette">
+    <architectures>
+      <arch>aarch64</arch>
+    </architectures>
+    <configure-options>
+      <!-- WebKitGTK is not ported; sign-in is a token entry / WebView activity -->
+      <option>-Dwith_webkit=false</option>
+
+      <!-- GTK on Android cannot do gstreamer anyway:
+           "disabled until we have a mechanism to pass the JNIEnv* & Context" -->
+      <option>-Dgtk:media-gstreamer=disabled</option>
+      <option>-Dgtk:print-cups=disabled</option>
+      <option>-Dgtk:build-demos=false</option>
+      <option>-Dgtk:build-testsuite=false</option>
+      <option>-Dgtk:build-examples=false</option>
+      <option>-Dgtk:build-tests=false</option>
+      <option>-Dgtk:introspection=disabled</option>
+      <option>-Dgtk:documentation=false</option>
+
+      <option>-Dlibadwaita:examples=false</option>
+      <option>-Dlibadwaita:tests=false</option>
+      <option>-Dlibadwaita:introspection=disabled</option>
+      <option>-Dlibadwaita:documentation=false</option>
+
+      <option>-Dglib:tests=false</option>
+      <option>-Dglib:introspection=disabled</option>
+      <option>-Dharfbuzz:tests=disabled</option>
+      <option>-Dharfbuzz:docs=disabled</option>
+      <option>-Dharfbuzz:introspection=disabled</option>
+      <option>-Dharfbuzz:icu_builtin=true</option>
+      <option>-Dcairo:tests=disabled</option>
+      <option>-Dfontconfig:tests=disabled</option>
+      <option>-Dfontconfig:doc=disabled</option>
+
+      <option>-Djson-glib:documentation=disabled</option>
+      <option>-Djson-glib:gtk_doc=disabled</option>
+      <option>-Djson-glib:tests=false</option>
+      <option>-Djson-glib:conformance=false</option>
+      <option>-Djson-glib:installed_tests=false</option>
+      <option>-Djson-glib:introspection=disabled</option>
+
+      <option>-Dlibsoup:tls_check=true</option>
+      <option>-Dlibsoup:tests=false</option>
+      <option>-Dlibsoup:docs=disabled</option>
+      <option>-Dlibsoup:introspection=disabled</option>
+      <option>-Dlibsoup:vapi=disabled</option>
+      <option>-Dlibsoup:sysprof=disabled</option>
+
+      <option>-Dlibgee:tests=disabled</option>
+      <option>-Dlibgee:disable-introspection=true</option>
+
+      <option>-Dglib-networking:gnome_proxy=disabled</option>
+      <option>-Dglib-networking:environment_proxy=disabled</option>
+      <option>-Dglib-networking:gnutls=disabled</option>
+      <option>-Dglib-networking:openssl=enabled</option>
+      <option>-Dglib-networking:libproxy=disabled</option>
+      <option>-Dglib-networking:default_library=static</option>
+    </configure-options>
+  </build>
+</app>

@@ -105,7 +105,7 @@ namespace Cassette {
 #else
             button_token_signin.visible = true;
 
-            login_action.activate.connect (macos_signin);
+            login_action.activate.connect (native_signin);
 
             button_token_signin.clicked.connect (on_token_signin_clicked);
 #endif
@@ -134,17 +134,25 @@ namespace Cassette {
             webview.load_uri (OAUTH_URL);
         }
 #else
-        void macos_signin () {
+        // Platform web view (WKWebView on macOS, WebView activity on Android)
+        // shows the OAuth page and hands back the token.
+        void native_signin () {
             button_online_mode.sensitive = false;
-            cassette_macos_auth_start (OAUTH_URL, (token) => {
-                if (token != null && token.length > 0) {
-                    browser_auth.begin (token);
-                } else {
-                    Idle.add_once (() => {
-                        button_online_mode.sensitive = true;
-                    });
-                }
-            });
+#if ANDROID
+            cassette_android_auth_start (OAUTH_URL, on_native_token);
+#else
+            cassette_macos_auth_start (OAUTH_URL, on_native_token);
+#endif
+        }
+
+        void on_native_token (string? token) {
+            if (token != null && token.length > 0) {
+                browser_auth.begin (token);
+            } else {
+                Idle.add_once (() => {
+                    button_online_mode.sensitive = true;
+                });
+            }
         }
 
         async void browser_auth (string token) {

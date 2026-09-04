@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<component type="desktop-application">
+<component type="desktop-application" xmlns="https://specifications.freedesktop.org/metainfo/1.0">
   <name>Cassette</name>
   <id>@APP_ID@</id>
   <metadata_license>CC0-1.0</metadata_license>
@@ -44,6 +44,9 @@
     <control>pointing</control>
     <control>touch</control>
   </recommends>
+  <requires>
+    <internet>always</internet>
+  </requires>
   <branding>
     <color type="primary" scheme_preference="light">#fee372</color>
     <color type="primary" scheme_preference="dark">#dd624b</color>

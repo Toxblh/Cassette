@@ -102,7 +102,38 @@ public class Cassette.Window : ApplicationWindow {
         Object (application: app);
     }
 
+#if ANDROID
+    // libadwaita's raised (header bar) and flat (window) colours, dark and light.
+    const uint32 BARS_RAISED_DARK = (uint32) 0xff2e2e32;
+    const uint32 BARS_FLAT_DARK = (uint32) 0xff222226;
+    const uint32 BARS_RAISED_LIGHT = (uint32) 0xffffffff;
+    const uint32 BARS_FLAT_LIGHT = (uint32) 0xfffafafb;
+
+    /**
+     * Paints the areas under the Android status bar and navigation bar in
+     * the colour of whatever toolbar touches them: the header bar is always
+     * raised; at the bottom it is the flat view switcher on phones in
+     * portrait, the raised player bar when the switcher is up top.
+     */
+    void update_android_bars () {
+        bool dark = Adw.StyleManager.get_default ().dark;
+        uint32 raised = dark ? BARS_RAISED_DARK : BARS_RAISED_LIGHT;
+        uint32 flat = dark ? BARS_FLAT_DARK : BARS_FLAT_LIGHT;
+
+        bool player_bar_is_bottom = player_bar_toolbar.reveal_bottom_bars && !switcher_toolbar.reveal_bottom_bars;
+
+        cassette_android_set_bars_colors (raised, player_bar_is_bottom ? raised : flat);
+    }
+#endif
+
     construct {
+#if ANDROID
+        update_android_bars ();
+        player_bar_toolbar.notify["reveal-bottom-bars"].connect (update_android_bars);
+        switcher_toolbar.notify["reveal-bottom-bars"].connect (update_android_bars);
+        Adw.StyleManager.get_default ().notify["dark"].connect (update_android_bars);
+#endif
+
         info_banner.button_clicked.connect (try_reconnect);
 
         main_stack.notify["visible-child-name"].connect (() => {
