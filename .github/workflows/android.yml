@@ -96,7 +96,7 @@ jobs:
             export ANDROID_KEYSTORE_LOCATION=_keys/ci.jks
             export ANDROID_KEYSTORE_KEY=cassette-ci
           fi
-          make -f build-aux/android/android.mk android-sign
+          make -f build-aux/android/android.mk android-sign release=1
           rm -f apks/app-universal-release.apk apks/app-universal-release.apk.idsig
           for f in apks/app-arm64-v8a-release.apk; do mv "$f" "apks/cassette-${GITHUB_SHA::8}-arm64-v8a.apk"; done
           rm -f apks/*.idsig
