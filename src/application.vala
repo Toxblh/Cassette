@@ -221,6 +221,11 @@ namespace Cassette {
         public override void activate () {
             base.activate ();
 
+#if ANDROID
+            // Bundled font (see main.vala); 11pt = 14.7px, Android's body size.
+            Gtk.Settings.get_default ().gtk_font_name = "Adwaita Sans 11";
+#endif
+
             if (main_window == null) {
                 main_window = new Window (this);
 

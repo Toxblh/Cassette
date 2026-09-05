@@ -23,7 +23,7 @@
                 <property name="orientation">vertical</property>
                 <property name="spacing">16</property>
                 <child>
-                  <object class="GtkBox">
+                  <object class="GtkBox" id="header_box">
                     <property name="valign">center</property>
                     <property name="vexpand">false</property>
                     <property name="spacing">10</property>
@@ -145,11 +145,16 @@
                           </object>
                         </child>
                         <child>
-                          <object class="GtkBox">
+                          <object class="GtkFlowBox">
                             <property name="margin-bottom">2</property>
-                            <property name="spacing">8</property>
+                            <property name="column-spacing">8</property>
+                            <property name="row-spacing">4</property>
                             <property name="vexpand">true</property>
                             <property name="valign">end</property>
+                            <property name="selection-mode">none</property>
+                            <property name="homogeneous">false</property>
+                            <property name="min-children-per-line">1</property>
+                            <property name="max-children-per-line">10</property>
                             <child>
                               <object class="GtkButton" id="play_button">
                                 <style>

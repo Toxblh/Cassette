@@ -441,27 +441,79 @@ namespace Cassette {
             }
         }
 
+        const int LOAD_MARGIN_ROWS = 3;
+
+        /**
+         * Top edge of row @index in the scrolled content's coordinates, or
+         * -1 when the rows have not been allocated yet.
+         */
+        double row_top (Gtk.Widget viewport, int index, out double height) {
+            Graphene.Rect bounds;
+            height = 0;
+
+            if (!filtered_rows[index].compute_bounds (viewport, out bounds) || bounds.size.height <= 0) {
+                return -1;
+            }
+
+            height = bounds.size.height;
+            return bounds.origin.y + adjustment.value;
+        }
+
         void load_chunk () {
             if (length == 0) {
                 return;
             }
 
-            int index;
-            if (adjustment.upper > 0) {
-                index = (int) (adjustment.value / (adjustment.upper / length));
+            int start = -1;
+            int end = -1;
+
+            // The rows sit below the page header inside the same scrolled
+            // window, so the adjustment cannot be mapped to row indexes
+            // proportionally: with a tall header (phones) that estimate runs
+            // ahead and unloads rows that are still on screen. Use the real
+            // row geometry instead; the old estimate stays as a fallback for
+            // the moment before the first allocation.
+            var viewport = track_box.get_ancestor (typeof (Gtk.Viewport));
+            double first_height;
+            if (viewport != null && row_top (viewport, 0, out first_height) >= 0) {
+                double view_top = adjustment.value;
+                double view_bottom = view_top + adjustment.page_size;
+
+                // First row whose bottom edge is below the visible top.
+                int lo = 0;
+                int hi = length - 1;
+                while (lo < hi) {
+                    int mid = (lo + hi) / 2;
+                    double h;
+                    double top = row_top (viewport, mid, out h);
+                    if (top + h <= view_top) {
+                        lo = mid + 1;
+                    } else {
+                        hi = mid;
+                    }
+                }
+
+                int last = lo;
+                while (last + 1 < length) {
+                    double h;
+                    if (row_top (viewport, last + 1, out h) >= view_bottom) {
+                        break;
+                    }
+                    last++;
+                }
+
+                start = int.max (0, lo - LOAD_MARGIN_ROWS);
+                end = int.min (length, last + 1 + LOAD_MARGIN_ROWS);
             } else {
-                index = 0;
-            }
+                int index = 0;
+                if (adjustment.upper > 0) {
+                    index = (int) (adjustment.value / (adjustment.upper / length));
+                }
 
-            int track_number = application.main_window.get_height () / 80;
+                int track_number = application.main_window.get_height () / 80;
 
-            int start = 0;
-            if (index - 3 > 0) {
-                start = index - 3;
-            }
-            int end = length;
-            if (index + track_number + 3 < length) {
-                end = index + track_number + 3;
+                start = int.max (0, index - LOAD_MARGIN_ROWS);
+                end = int.min (length, index + track_number + LOAD_MARGIN_ROWS);
             }
 
             var new_loaded_rows = range_set (start, end);

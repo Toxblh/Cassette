@@ -127,6 +127,13 @@ public class Cassette.Window : ApplicationWindow {
 #endif
 
     construct {
+        resized.connect ((width, height) => {
+            bool compact = width < PLAYER_BAR_COMPACT_WIDTH;
+            if (player_bar.compact != compact) {
+                player_bar.compact = compact;
+            }
+        });
+
 #if ANDROID
         update_android_bars ();
         player_bar_toolbar.notify["reveal-bottom-bars"].connect (update_android_bars);
@@ -186,6 +193,9 @@ public class Cassette.Window : ApplicationWindow {
             return true;
         }
     }
+
+    // Below this width the player bar drops to its two-row phone layout.
+    const int PLAYER_BAR_COMPACT_WIDTH = 620;
 
     void check_bar_visible () {
         switcher_toolbar.reveal_bottom_bars = (sidebar.collapsed && sidebar.is_shown) || is_shrinked;

@@ -99,6 +99,8 @@ if is_android
       meson.project_source_root() / 'build-aux' / 'android' / 'ui',
       '@OUTPUT@',
     ],
+    # The output is a directory, so ninja never sees it as stale; the copy is cheap.
+    build_always_stale: true,
   )
 else
   blueprints = custom_target('blueprints',

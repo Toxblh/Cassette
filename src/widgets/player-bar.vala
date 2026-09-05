@@ -25,6 +25,8 @@ namespace Cassette {
     public class PlayerBar : Adw.Bin {
 
         [GtkChild]
+        unowned Adw.MultiLayoutView multi_layout;
+        [GtkChild]
         unowned TrackCarousel track_carousel;
         [GtkChild]
         unowned Gtk.Label current_time_mark;
@@ -60,6 +62,19 @@ namespace Cassette {
         unowned TrackOptionsButton track_options_button;
         [GtkChild]
         unowned VolumeButton volume_button;
+
+        /**
+         * Phone layout: transport row over the progress row, secondary
+         * controls hidden. Set by the window from its width.
+         */
+        public bool compact {
+            get {
+                return multi_layout.layout_name == "narrow";
+            }
+            set {
+                multi_layout.layout_name = value ? "narrow" : "wide";
+            }
+        }
 
         public Window window { get; construct set; }
 

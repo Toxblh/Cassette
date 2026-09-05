@@ -86,6 +86,12 @@ if is_android
   # backend is linked statically and registered by hand in main.vala.
   subproject('glib-networking', default_options: ['default_library=static'])
   cassette_dependencies += dependency('gioopenssl')
+
+  # UI font. Android's Roboto comes as variable fonts that fontconfig/Pango
+  # match inconsistently across devices (regular weight picked from a
+  # different file than bold on Pixel), so the APK ships Adwaita Sans and
+  # main.vala points fontconfig at it.
+  subproject('adwaita-fonts')
 endif
 
 if host_machine.system() == 'darwin'

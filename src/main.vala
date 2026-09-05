@@ -54,6 +54,54 @@ void android_setup () {
             }
         }
     }
+
+    android_setup_fonts ();
+}
+
+/**
+ * Pins the UI font to the bundled Adwaita Sans. fontconfig only knows
+ * /system/fonts here, and the default fonts.conf reads
+ * $XDG_CONFIG_HOME/fontconfig/fonts.conf, so that file adds the fonts the
+ * APK ships (share/fonts under XDG_DATA_DIRS) and aliases the generic
+ * families to Adwaita Sans. Everything not covered (CJK, emoji) still
+ * falls back to the system fonts.
+ */
+void android_setup_fonts () {
+    var data_dirs = Environment.get_system_data_dirs ();
+    if (data_dirs.length == 0) {
+        return;
+    }
+
+    var fonts_dir = Path.build_filename (data_dirs[0], "fonts");
+    if (!FileUtils.test (Path.build_filename (fonts_dir, "Adwaita", "AdwaitaSans-Regular.ttf"), FileTest.EXISTS)) {
+        return;
+    }
+
+    var conf_dir = Path.build_filename (Environment.get_user_config_dir (), "fontconfig");
+    var conf_path = Path.build_filename (conf_dir, "fonts.conf");
+    var conf = """<?xml version="1.0"?>
+<!DOCTYPE fontconfig SYSTEM "fonts.dtd">
+<!-- written by Cassette on every start; see main.vala -->
+<fontconfig>
+  <dir>%s</dir>
+  <alias binding="strong"><family>sans-serif</family><prefer><family>Adwaita Sans</family></prefer></alias>
+  <alias binding="strong"><family>Sans</family><prefer><family>Adwaita Sans</family></prefer></alias>
+  <alias binding="strong"><family>Cantarell</family><prefer><family>Adwaita Sans</family></prefer></alias>
+</fontconfig>
+""".printf (fonts_dir);
+
+    try {
+        DirUtils.create_with_parents (conf_dir, 0755);
+        string? old = null;
+        if (FileUtils.test (conf_path, FileTest.EXISTS)) {
+            FileUtils.get_contents (conf_path, out old);
+        }
+        if (old != conf) {
+            FileUtils.set_contents (conf_path, conf);
+        }
+    } catch (Error e) {
+        warning ("fontconfig user config not written: %s", e.message);
+    }
 }
 #endif
 

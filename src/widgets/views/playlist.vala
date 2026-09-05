@@ -28,6 +28,8 @@ namespace Cassette {
         [GtkChild]
         unowned Gtk.ScrolledWindow scrolled_window;
         [GtkChild]
+        unowned Gtk.Box header_box;
+        [GtkChild]
         unowned CoverImage cover_image;
         [GtkChild]
         unowned Gtk.Label duration_label;
@@ -74,6 +76,26 @@ namespace Cassette {
         }
 
         construct {
+            // Narrow windows (phones): cover above the text instead of beside it.
+            if (application.main_window != null) {
+                application.main_window.bind_property (
+                    "is-shrinked", header_box, "orientation",
+                    BindingFlags.SYNC_CREATE,
+                    (binding, src, ref target) => {
+                        target.set_enum (src.get_boolean () ? Gtk.Orientation.VERTICAL : Gtk.Orientation.HORIZONTAL);
+                        return true;
+                    }
+                );
+                application.main_window.bind_property (
+                    "is-shrinked", cover_image, "halign",
+                    BindingFlags.SYNC_CREATE,
+                    (binding, src, ref target) => {
+                        target.set_enum (src.get_boolean () ? Gtk.Align.CENTER : Gtk.Align.START);
+                        return true;
+                    }
+                );
+            }
+
             visibility_switch.state_set.connect (on_switch_change);
 
             if (yam_talker.is_me (uid) && kind != "3") {
