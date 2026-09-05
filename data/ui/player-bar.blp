@@ -117,6 +117,10 @@ template $CassettePlayerBar: Adw.Bin {
           }
 
           Adw.LayoutSlot {
+            id: "output";
+          }
+
+          Adw.LayoutSlot {
             id: "volume";
           }
 
@@ -165,6 +169,10 @@ template $CassettePlayerBar: Adw.Bin {
 
           Adw.LayoutSlot {
             id: "like";
+          }
+
+          Adw.LayoutSlot {
+            id: "output";
           }
 
           Adw.LayoutSlot {
@@ -398,6 +406,9 @@ template $CassettePlayerBar: Adw.Bin {
 
       valign: center;
     }
+
+    [output]
+    $CassetteOutputButton output_button {}
 
     [volume]
     $CassetteVolumeButton volume_button {

@@ -110,6 +110,10 @@
 		<key name="can-cache" type="b">
 			<default>true</default>
 		</key>
+		<key name="last-station" type="s">
+			<default>""</default>
+			<summary>Id of the Yandex station playback was last sent to</summary>
+		</key>
 		<key name="debug-mode" type="b">
 			<default>false</default>
 		</key>

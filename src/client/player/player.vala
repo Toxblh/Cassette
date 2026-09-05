@@ -320,6 +320,12 @@ public class Cassette.Client.Player.Player : Object {
         string station_id,
         ArrayList<YaMAPI.Track> queue = new ArrayList<YaMAPI.Track> ()
     ) {
+        // Output is a Yandex station: it plays the wave itself.
+        if (Glagol.station_manager.active != null) {
+            Glagol.station_manager.play_context ("radio", station_id);
+            return;
+        }
+
         stop ();
 
         if (repeat_mode == RepeatMode.QUEUE) {
@@ -362,6 +368,11 @@ public class Cassette.Client.Player.Player : Object {
         int current_index,
         string? context_description
     ) {
+        if (Glagol.station_manager.active != null) {
+            Glagol.station_manager.play_from_app (queue, context_type, context_id, current_index);
+            return;
+        }
+
         stop ();
 
         mode = new TrackList (
@@ -501,6 +512,11 @@ public class Cassette.Client.Player.Player : Object {
         /**
             Находит трек в очереди и воспроизводит его
         */
+        if (Glagol.station_manager.active != null) {
+            Glagol.station_manager.play_track (track_info.id);
+            return;
+        }
+
         track_stop (false);
 
         mode.change_track (track_info);

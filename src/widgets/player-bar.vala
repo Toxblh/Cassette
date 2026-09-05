@@ -84,6 +84,13 @@ namespace Cassette {
             Object (window: window);
         }
 
+        // Template types must be registered before the builder meets them:
+        // on Android the app is a shared library and GtkBuilder cannot
+        // resolve `cassette_output_button_get_type` by symbol name.
+        static construct {
+            typeof (OutputButton).ensure ();
+        }
+
         construct {
             player.stopped.connect (() => {
                 slider.set_value (0.0d);

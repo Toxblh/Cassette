@@ -58,6 +58,11 @@ cassette_gui_sources = files(
   'widgets/sidebar/sidebar-child-bin.vala',
   'widgets/sidebar/sidebar.vala',
 
+  'widgets/station/output-button.vala',
+  'widgets/station/station-bar.vala',
+  'widgets/station/station-picker-dialog.vala',
+  'widgets/station/station-volume-slider.vala',
+
   'widgets/track-list/track-list.vala',
   'widgets/track-list/track-row-base.vala',
   'widgets/track-list/tracks-model.vala',

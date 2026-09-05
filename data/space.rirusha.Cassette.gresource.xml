@@ -5,7 +5,10 @@
     <file alias="audio-volume-low-symbolic.svg">assets/icons/audio-volume-low-symbolic.svg</file>
     <file alias="audio-volume-medium-symbolic.svg">assets/icons/audio-volume-medium-symbolic.svg</file>
     <file alias="audio-volume-muted-symbolic.svg">assets/icons/audio-volume-muted-symbolic.svg</file>
+    <file alias="audio-speakers-symbolic.svg">assets/icons/audio-speakers-symbolic.svg</file>
     <file alias="audio-x-generic-symbolic.svg">assets/icons/audio-x-generic-symbolic.svg</file>
+    <file alias="computer-symbolic.svg">assets/icons/computer-symbolic.svg</file>
+    <file alias="phone-symbolic.svg">assets/icons/phone-symbolic.svg</file>
     <file alias="bookmark-new-symbolic.svg">assets/icons/bookmark-new-symbolic.svg</file>
     <file alias="cache-perm-symbolic.svg">assets/icons/cache-perm-symbolic.svg</file>
     <file alias="cache-temp-symbolic.svg">assets/icons/cache-temp-symbolic.svg</file>

@@ -53,6 +53,7 @@ namespace Cassette {
             { "change-repeat", on_change_repeat_action },
             { "share-current-track", on_share_current_track_action},
             { "parse-url", on_parse_url_action },
+            { "play-on", on_play_on_action },
             { "open-account", on_open_account_action },
             { "open-plus", on_open_plus_action },
             { "get-plus", on_get_plus_action },
@@ -436,6 +437,12 @@ namespace Cassette {
 
                     show_message (_("Albums view not implemented yet"));
                 }
+            }
+        }
+
+        void on_play_on_action () {
+            if (main_window != null) {
+                new StationPickerDialog ().present (main_window);
             }
         }
 

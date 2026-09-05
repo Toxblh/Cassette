@@ -83,8 +83,23 @@ template $CassetteWindow: $CassetteApplicationWindow {
       };
 
       [bottom]
-      $CassettePlayerBar player_bar {
-        window: template;
+      Stack bar_stack {
+        hhomogeneous: true;
+        vhomogeneous: false;
+
+        StackPage {
+          name: "local";
+
+          child: $CassettePlayerBar player_bar {
+            window: template;
+          };
+        }
+
+        StackPage {
+          name: "station";
+
+          child: $CassetteStationBar station_bar {};
+        }
       }
     };
 

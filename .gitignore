@@ -26,6 +26,7 @@ Cassette.app
 # that `pixiewood prepare` and android.mk drop into subprojects/.
 /.pixiewood/
 /.buildconfig
+/.cache/
 /apks/
 /build-aux/android/ui/
 /subprojects/*.wrap

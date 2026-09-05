@@ -176,6 +176,7 @@ namespace Cassette.Client {
         threader = new Threader ();
         yam_talker = new YaMTalker ();
         player = new Player.Player ();
+        Glagol.station_manager = new Glagol.StationManager ();
 
 #if MACOS
         MacOsNowPlaying.init ();

@@ -58,6 +58,12 @@ cassette_client_sources = files(
   'cachier/job.vala',
   'cachier/storager.vala',
 
+  'glagol/device-discovery.vala',
+  'glagol/device-token-provider.vala',
+  'glagol/glagol-client.vala',
+  'glagol/glagol-device.vala',
+  'glagol/station-manager.vala',
+
   'player/mods/abstract-mode.vala',
   'player/mods/abstract-shufflable.vala',
   'player/mods/empty.vala',

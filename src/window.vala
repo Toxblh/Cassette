@@ -50,6 +50,10 @@ public class Cassette.Window : ApplicationWindow {
     unowned Adw.ToolbarView switcher_toolbar;
     [GtkChild]
     unowned PlayerBar player_bar;
+    [GtkChild]
+    unowned Gtk.Stack bar_stack;
+    [GtkChild]
+    unowned StationBar station_bar;
 
     int reconnect_timer = Cassette.Client.TIMEOUT;
 
@@ -98,6 +102,11 @@ public class Cassette.Window : ApplicationWindow {
 
     public bool is_ready { get; private set; default = false; }
 
+    static construct {
+        typeof (PlayerBar).ensure ();
+        typeof (StationBar).ensure ();
+    }
+
     public Window (Cassette.Application app) {
         Object (application: app);
     }
@@ -132,6 +141,26 @@ public class Cassette.Window : ApplicationWindow {
             if (player_bar.compact != compact) {
                 player_bar.compact = compact;
             }
+            if (station_bar.compact != compact) {
+                station_bar.compact = compact;
+            }
+        });
+
+        Client.Glagol.station_manager.connection_changed.connect (update_output_bar);
+
+        // Manual UI testing without clicking: CASSETTE_DEBUG_STATION=<device id>
+        // connects to that station after start-up; CASSETTE_DEBUG_PICKER=1 opens
+        // the picker. Both are ignored when unset.
+        var debug_station = Environment.get_variable ("CASSETTE_DEBUG_STATION");
+        var debug_picker = Environment.get_variable ("CASSETTE_DEBUG_PICKER");
+        if (debug_station != null || debug_picker != null) {
+            Timeout.add_seconds (8, () => {
+                debug_station_hook.begin (debug_station, debug_picker != null);
+                return Source.REMOVE;
+            });
+        }
+        Client.Glagol.station_manager.message.connect ((text) => {
+            Cassette.application.show_message (text);
         });
 
 #if ANDROID
@@ -303,6 +332,64 @@ public class Cassette.Window : ApplicationWindow {
     }
 
     public void hide_player_bar () {
+        // The station bar lives in the same toolbar; keep it while remote.
+        if (Client.Glagol.station_manager.active != null) {
+            return;
+        }
         player_bar_toolbar.reveal_bottom_bars = false;
+    }
+
+    async void debug_station_hook (string? station_id, bool open_picker) {
+        var manager = Client.Glagol.station_manager;
+        if (station_id != null) {
+            yield manager.refresh ();
+            for (uint i = 0; i < manager.stations.get_n_items (); i++) {
+                var station = (Client.Glagol.Station) manager.stations.get_item (i);
+                if (station.id == station_id) {
+                    try {
+                        yield manager.transfer_to (station);
+                    } catch (Error e) {
+                        warning ("debug station: %s", e.message);
+                    }
+                }
+            }
+        }
+        if (open_picker) {
+            new StationPickerDialog ().present (this);
+        }
+
+        // CASSETTE_DEBUG_SHOT=<file.png>: render the window from inside GTK
+        // (screen capture needs permissions a terminal rarely has).
+        var shot = Environment.get_variable ("CASSETTE_DEBUG_SHOT");
+        if (shot != null) {
+            Timeout.add_seconds (9, () => {
+                try {
+                    var paintable = new Gtk.WidgetPaintable (this);
+                    var snapshot = new Gtk.Snapshot ();
+                    paintable.snapshot (snapshot, get_width (), get_height ());
+                    var node = snapshot.free_to_node ();
+                    if (node != null) {
+                        var texture = get_renderer ().render_texture (node, null);
+                        texture.save_to_png (shot);
+                        message ("debug shot saved to %s", shot);
+                    }
+                } catch (Error e) {
+                    warning ("debug shot: %s", e.message);
+                }
+                return Source.REMOVE;
+            });
+        }
+    }
+
+    // Local player bar or the station bar, depending on where playback goes.
+    void update_output_bar () {
+        bool remote = Client.Glagol.station_manager.active != null;
+        bar_stack.visible_child_name = remote ? "station" : "local";
+
+        if (remote) {
+            player_bar_toolbar.reveal_bottom_bars = true;
+        } else {
+            player_bar_toolbar.reveal_bottom_bars = player.mode.get_current_track_info () != null;
+        }
     }
 }
