@@ -28,7 +28,7 @@ public class Cassette.StationBar : Adw.Bin {
 
     const int COVER_SIZE = 48;
 
-    Adw.MultiLayoutView multi_layout;
+    public Adw.MultiLayoutView multi_layout;
 
     Gtk.Image cover;
     Gtk.Label title_label;
@@ -51,21 +51,24 @@ public class Cassette.StationBar : Adw.Bin {
     uint tick_source = 0;
     bool seeking = false;
 
-    public bool compact {
-        get {
-            return multi_layout.layout_name == "narrow";
-        }
-        set {
-            multi_layout.layout_name = value ? "narrow" : "wide";
-        }
+    public bool compact { get; set; default = false; }
+
+    /** Very small screens: cover, titles, play/next and "play here" only. */
+    public bool tiny { get; set; default = false; }
+
+    void apply_layout () {
+        multi_layout.layout_name = tiny ? "tiny" : compact ? "narrow" : "wide";
     }
 
     construct {
+        notify["compact"].connect (apply_layout);
+        notify["tiny"].connect (apply_layout);
         build_children ();
 
         multi_layout = new Adw.MultiLayoutView ();
         multi_layout.add_layout (new Adw.Layout (build_wide ()) { name = "wide" });
         multi_layout.add_layout (new Adw.Layout (build_narrow ()) { name = "narrow" });
+        multi_layout.add_layout (new Adw.Layout (build_tiny ()) { name = "tiny" });
 
         multi_layout.set_child ("cover", cover_widget ());
         multi_layout.set_child ("titles", titles_widget ());
@@ -305,6 +308,38 @@ public class Cassette.StationBar : Adw.Bin {
         var hidden = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 0) {
             visible = false
         };
+        hidden.append (slot ("output-wide"));
+        box.append (hidden);
+
+        return box;
+    }
+
+    Gtk.Widget build_tiny () {
+        var box = new Gtk.Box (Gtk.Orientation.VERTICAL, 2) {
+            margin_top = 4,
+            margin_bottom = 4,
+            margin_start = 4,
+            margin_end = 4
+        };
+
+        var row = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 0);
+        row.append (slot ("cover"));
+        row.append (slot ("titles"));
+        row.append (slot ("play"));
+        row.append (slot ("next"));
+        row.append (slot ("back"));
+        box.append (row);
+
+        box.append (slot ("progress"));
+
+        // Volume: hardware keys drive the station on Android; the chip and
+        // prev are in the picker / track menu.
+        var hidden = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 0) {
+            visible = false
+        };
+        hidden.append (slot ("prev"));
+        hidden.append (slot ("volume"));
+        hidden.append (slot ("output-narrow"));
         hidden.append (slot ("output-wide"));
         box.append (hidden);
 

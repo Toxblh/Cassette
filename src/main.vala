@@ -43,6 +43,20 @@ void android_setup () {
         );
     }
 
+    // Debug switches: `adb shell` cannot pass environment variables, so
+    // KEY=VALUE lines from <app files dir>/debug.env become the environment
+    // (CASSETTE_DEBUG_*, G_MESSAGES_DEBUG, ...). Absent in normal use.
+    var debug_env = Path.build_filename (Environment.get_user_data_dir (), "..", "debug.env");
+    string debug_lines;
+    if (FileUtils.get_contents (debug_env, out debug_lines)) {
+        foreach (var line in debug_lines.split ("\n")) {
+            var parts = line.strip ().split ("=", 2);
+            if (parts.length == 2 && parts[0] != "") {
+                Environment.set_variable (parts[0], parts[1], true);
+            }
+        }
+    }
+
     // fontconfig defaults to /etc/fonts, which does not exist on Android;
     // the config from the fontconfig subproject lands in XDG_CONFIG_DIRS.
     if (Environment.get_variable ("FONTCONFIG_FILE") == null) {

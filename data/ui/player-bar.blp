@@ -224,6 +224,94 @@ template $CassettePlayerBar: Adw.Bin {
       };
     }
 
+    Adw.Layout {
+      name: "tiny";
+
+      content: Box {
+        orientation: vertical;
+        spacing: 2;
+        margin-top: 4;
+        margin-bottom: 4;
+        margin-start: 4;
+        margin-end: 4;
+
+        Box {
+          spacing: 0;
+
+          Adw.LayoutSlot {
+            id: "carousel";
+            hexpand: true;
+          }
+
+          Adw.LayoutSlot {
+            id: "prev";
+          }
+
+          Adw.LayoutSlot {
+            id: "play";
+          }
+
+          Adw.LayoutSlot {
+            id: "next";
+          }
+
+          Adw.LayoutSlot {
+            id: "options";
+          }
+        }
+
+        Adw.LayoutSlot {
+          id: "progress";
+        }
+
+        // Like lives in the track menu and the system media controls,
+        // the output picker in the primary menu.
+        Box {
+          visible: false;
+
+          Adw.LayoutSlot {
+            id: "like";
+          }
+
+          Adw.LayoutSlot {
+            id: "output";
+          }
+
+          Adw.LayoutSlot {
+            id: "repeat";
+          }
+
+          Adw.LayoutSlot {
+            id: "dislike";
+          }
+
+          Adw.LayoutSlot {
+            id: "shuffle";
+          }
+
+          Adw.LayoutSlot {
+            id: "save";
+          }
+
+          Adw.LayoutSlot {
+            id: "flow-settings";
+          }
+
+          Adw.LayoutSlot {
+            id: "queue";
+          }
+
+          Adw.LayoutSlot {
+            id: "volume";
+          }
+
+          Adw.LayoutSlot {
+            id: "fullscreen";
+          }
+        }
+      };
+    }
+
     [carousel]
     Button track_detailed_button {
       styles [

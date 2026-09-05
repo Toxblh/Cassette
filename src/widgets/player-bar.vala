@@ -25,7 +25,7 @@ namespace Cassette {
     public class PlayerBar : Adw.Bin {
 
         [GtkChild]
-        unowned Adw.MultiLayoutView multi_layout;
+        public unowned Adw.MultiLayoutView multi_layout;
         [GtkChild]
         unowned TrackCarousel track_carousel;
         [GtkChild]
@@ -67,13 +67,16 @@ namespace Cassette {
          * Phone layout: transport row over the progress row, secondary
          * controls hidden. Set by the window from its width.
          */
-        public bool compact {
-            get {
-                return multi_layout.layout_name == "narrow";
-            }
-            set {
-                multi_layout.layout_name = value ? "narrow" : "wide";
-            }
+        public bool compact { get; set; default = false; }
+
+        /**
+         * Very small screens (foldable outer displays, ~300 dp): only the
+         * transport and the track menu stay in the row.
+         */
+        public bool tiny { get; set; default = false; }
+
+        void apply_layout () {
+            multi_layout.layout_name = tiny ? "tiny" : compact ? "narrow" : "wide";
         }
 
         public Window window { get; construct set; }
@@ -92,6 +95,8 @@ namespace Cassette {
         }
 
         construct {
+            notify["compact"].connect (apply_layout);
+            notify["tiny"].connect (apply_layout);
             player.stopped.connect (() => {
                 slider.set_value (0.0d);
             });

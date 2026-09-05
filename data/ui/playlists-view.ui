@@ -19,6 +19,8 @@
                     <style>
                       <class name="title-1"/>
                     </style>
+                    <property name="wrap">true</property>
+                    <property name="justify">center</property>
                     <property name="margin-top">4</property>
                     <property name="label" translatable="true">Your playlists</property>
                   </object>
@@ -36,6 +38,8 @@
                     <style>
                       <class name="title-1"/>
                     </style>
+                    <property name="wrap">true</property>
+                    <property name="justify">center</property>
                     <property name="label" translatable="true">Also you liked these playlists</property>
                   </object>
                 </child>

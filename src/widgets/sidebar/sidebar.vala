@@ -67,6 +67,12 @@ public class Cassette.Sidebar : ShrinkableBin {
 
     public bool collapsed { get; set; }
 
+    /**
+     * Overlay panel width. Also the minimum width of the whole window while
+     * collapsed, so the window narrows it on tiny screens.
+     */
+    public int min_sidebar_width { get; set; default = 360; }
+
     public signal void child_changed (SidebarChildBin? new_child);
 
     construct {

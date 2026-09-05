@@ -11,7 +11,7 @@ template $CassetteSidebar: $CassetteShrinkableBin {
     collapsed: bind template.collapsed;
     pin-sidebar: true;
     enable-show-gesture: false;
-    min-sidebar-width: 360;
+    min-sidebar-width: bind template.min-sidebar-width;
     max-sidebar-width: 450;
 
     [sidebar]

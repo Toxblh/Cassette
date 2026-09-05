@@ -105,6 +105,7 @@ public class Cassette.Window : ApplicationWindow {
     static construct {
         typeof (PlayerBar).ensure ();
         typeof (StationBar).ensure ();
+        typeof (ClipBin).ensure ();
     }
 
     public Window (Cassette.Application app) {
@@ -138,11 +139,26 @@ public class Cassette.Window : ApplicationWindow {
     construct {
         resized.connect ((width, height) => {
             bool compact = width < PLAYER_BAR_COMPACT_WIDTH;
+            bool tiny = width < PLAYER_BAR_TINY_WIDTH;
             if (player_bar.compact != compact) {
                 player_bar.compact = compact;
             }
             if (station_bar.compact != compact) {
                 station_bar.compact = compact;
+            }
+            if (player_bar.tiny != tiny) {
+                player_bar.tiny = tiny;
+            }
+            if (station_bar.tiny != tiny) {
+                station_bar.tiny = tiny;
+            }
+            if (is_tiny != tiny) {
+                is_tiny = tiny;
+            }
+            // The overlay sidebar's minimum is the window's minimum too.
+            int sidebar_min = tiny ? 260 : 360;
+            if (sidebar.min_sidebar_width != sidebar_min) {
+                sidebar.min_sidebar_width = sidebar_min;
             }
         });
 
@@ -153,6 +169,28 @@ public class Cassette.Window : ApplicationWindow {
         // the picker. Both are ignored when unset.
         var debug_station = Environment.get_variable ("CASSETTE_DEBUG_STATION");
         var debug_picker = Environment.get_variable ("CASSETTE_DEBUG_PICKER");
+        // CASSETTE_DEBUG_MEASURE=<px>: 9 s after start, list the widgets whose
+        // minimum width exceeds <px> (who keeps the window from shrinking).
+        var debug_measure = Environment.get_variable ("CASSETTE_DEBUG_MEASURE");
+        if (debug_measure != null) {
+            Timeout.add_seconds (9, () => {
+                // CASSETTE_DEBUG_PAGE=<page id>: measure that page instead of the first.
+                var debug_page = Environment.get_variable ("CASSETTE_DEBUG_PAGE");
+                if (debug_page != null) {
+                    main_stack.visible_child_name = debug_page;
+                }
+                int min, nat;
+                measure (Gtk.Orientation.HORIZONTAL, -1, out min, out nat, null, null);
+                message ("window min width %d, nat %d, allocated %d", min, nat, get_width ());
+                debug_measure_tree (this, int.parse (debug_measure), 0);
+                // The bars are hidden until something plays; measure them anyway.
+                player_bar.measure (Gtk.Orientation.HORIZONTAL, -1, out min, out nat, null, null);
+                message ("player bar (%s) min %d nat %d", player_bar.multi_layout.layout_name, min, nat);
+                station_bar.measure (Gtk.Orientation.HORIZONTAL, -1, out min, out nat, null, null);
+                message ("station bar (%s) min %d nat %d", station_bar.multi_layout.layout_name, min, nat);
+                return Source.REMOVE;
+            });
+        }
         if (debug_station != null || debug_picker != null) {
             Timeout.add_seconds (8, () => {
                 debug_station_hook.begin (debug_station, debug_picker != null);
@@ -185,6 +223,17 @@ public class Cassette.Window : ApplicationWindow {
         Cassette.settings.bind ("window-width", this, "default-width", SettingsBindFlags.DEFAULT);
         Cassette.settings.bind ("window-height", this, "default-height", SettingsBindFlags.DEFAULT);
         Cassette.settings.bind ("window-maximized", this, "maximized", SettingsBindFlags.DEFAULT);
+
+        // CASSETTE_DEBUG_SIZE=WxH: start with that size instead of the saved
+        // one (small-screen checks).
+        var debug_size = Environment.get_variable ("CASSETTE_DEBUG_SIZE");
+        if (debug_size != null) {
+            var parts = debug_size.split ("x");
+            if (parts.length == 2) {
+                maximized = false;
+                set_default_size (int.parse (parts[0]), int.parse (parts[1]));
+            }
+        }
 
         header_bar.backward_clicked.connect ((obj) => {
             current_view.backward ();
@@ -224,7 +273,12 @@ public class Cassette.Window : ApplicationWindow {
     }
 
     // Below this width the player bar drops to its two-row phone layout.
+    /** Window narrower than PLAYER_BAR_TINY_WIDTH: rows and bars drop secondary controls. */
+    public bool is_tiny { get; set; default = false; }
+
     const int PLAYER_BAR_COMPACT_WIDTH = 620;
+    // Foldable outer screens (~300 dp): the bars drop to their tiny layout.
+    const int PLAYER_BAR_TINY_WIDTH = 340;
 
     void check_bar_visible () {
         switcher_toolbar.reveal_bottom_bars = (sidebar.collapsed && sidebar.is_shown) || is_shrinked;
@@ -337,6 +391,22 @@ public class Cassette.Window : ApplicationWindow {
             return;
         }
         player_bar_toolbar.reveal_bottom_bars = false;
+    }
+
+    static void debug_measure_tree (Gtk.Widget widget, int threshold, int depth) {
+        if (!widget.visible) {
+            return;
+        }
+        int min, nat;
+        widget.measure (Gtk.Orientation.HORIZONTAL, -1, out min, out nat, null, null);
+        if (min > threshold) {
+            var classes = string.joinv (".", widget.get_css_classes ());
+            message ("%s%s%s min=%d nat=%d alloc=%d", string.nfill (depth * 2, ' '),
+                widget.get_type ().name (), classes != "" ? "." + classes : "", min, nat, widget.get_width ());
+        }
+        for (var child = widget.get_first_child (); child != null; child = child.get_next_sibling ()) {
+            debug_measure_tree (child, threshold, depth + 1);
+        }
     }
 
     async void debug_station_hook (string? station_id, bool open_picker) {

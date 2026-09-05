@@ -57,6 +57,11 @@ namespace Cassette {
         }
 
         construct {
+            // No room for the cache indicator on ~300 dp screens.
+            application.main_window.bind_property (
+                "is-tiny", save_stack, "visible",
+                BindingFlags.SYNC_CREATE | BindingFlags.INVERT_BOOLEAN
+            );
             if (show_dislike_button) {
                 assert (!track_info.is_ugc);
                 dislike_button.visible = true;

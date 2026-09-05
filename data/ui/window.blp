@@ -4,7 +4,7 @@ using Adw 1;
 template $CassetteWindow: $CassetteApplicationWindow {
   default-width: 600;
   default-height: 500;
-  width-request: 360;
+  width-request: 280;
   height-request: 294;
   shrink-edge-width: 450;
   player-bar-is-visible: bind player_bar.visible bidirectional;
@@ -83,23 +83,29 @@ template $CassetteWindow: $CassetteApplicationWindow {
       };
 
       [bottom]
-      Stack bar_stack {
-        hhomogeneous: true;
-        vhomogeneous: false;
+      $CassetteClipBin {
+        // The bars switch to their compact layout from the window width;
+        // the wide layout must not keep the window from getting there.
+        min-width: 200;
 
-        StackPage {
-          name: "local";
+        child: Stack bar_stack {
+          hhomogeneous: true;
+          vhomogeneous: false;
 
-          child: $CassettePlayerBar player_bar {
-            window: template;
-          };
-        }
+          StackPage {
+            name: "local";
 
-        StackPage {
-          name: "station";
+            child: $CassettePlayerBar player_bar {
+              window: template;
+            };
+          }
 
-          child: $CassetteStationBar station_bar {};
-        }
+          StackPage {
+            name: "station";
+
+            child: $CassetteStationBar station_bar {};
+          }
+        };
       }
     };
 

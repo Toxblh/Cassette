@@ -2,7 +2,13 @@ using Gtk 4.0;
 using Adw 1;
 
 template $CassetteHeaderedScrolledWindow: Adw.Bin {
-  Box {
+  // On short screens (foldable outer displays) the fixed header would leave
+  // no room for the body: then this outer window scrolls everything.
+  ScrolledWindow outer_scrolled_window {
+    hscrollbar-policy: never;
+    vscrollbar-policy: never;
+
+    Box {
     orientation: vertical;
 
     Revealer header_revealer {
@@ -29,6 +35,7 @@ template $CassetteHeaderedScrolledWindow: Adw.Bin {
     ScrolledWindow real_scrolled_window {
       hscrollbar-policy: never;
       propagate-natural-height: true;
+    }
     }
   }
 }
