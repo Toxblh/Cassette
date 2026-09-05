@@ -10,7 +10,7 @@ Builder): one meson/ninja pass compiles the whole GTK stack plus Cassette into
 |---|---|---|
 | Stream playback | `GstPlayerBackend` (playbin) | `AndroidPlayerBackend` → `src/android/android-player.c` → `PlayerBridge.java` (MediaPlayer, audio focus) |
 | External control | MPRIS (D-Bus) / macOS Now Playing | `src/android/now-playing.vala` → `android-now-playing.c` → `SessionBridge.java` (MediaSession) + `PlaybackService.java` (foreground service, notification) |
-| Sign-in | WebKitGTK / WKWebView | `AuthActivity.java` (WebView) via `android-auth.c`, or manual token entry |
+| Sign-in | WebKitGTK / WKWebView | `AuthWebView.java` (WebView as a dialog over the running activity; `AuthActivity` fallback) via `android-auth.c`, or manual token entry |
 | TLS | GIO module | glib-networking (openssl) linked statically, registered in `main.vala` |
 
 The Vala side is gated with `#if ANDROID`; `PlayerBackend` (`src/client/player/backend.vala`)

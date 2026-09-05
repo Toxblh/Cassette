@@ -59,6 +59,8 @@ def patch_manifest(path: Path):
         act = ET.SubElement(app, "activity")
         act.set(a("name"), "space.rirusha.cassette.AuthActivity")
         act.set(a("exported"), "false")
+        # No action bar: the runtime's default theme drew a light title on a light bar.
+        act.set(a("theme"), "@android:style/Theme.DeviceDefault.DayNight")
         act.set(a("configChanges"), "orientation|screenSize|keyboardHidden")
 
     ET.indent(tree, space="    ")
