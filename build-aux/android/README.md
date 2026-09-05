@@ -26,6 +26,8 @@ is the only contract the queue logic sees.
 * `java/space/rirusha/cassette/` — Java bridges, copied into the generated project.
 * `subprojects/` — wraps pixiewood does not carry (libsoup, openssl, json-glib, libgee,
   sqlite3, glib-networking, libpsl, nghttp2). Copied into `subprojects/` at build time.
+* `fonts/Inter/` — static Inter (SIL OFL), the UI font; installed to `share/fonts`, wired
+  up by `android_setup_fonts` in `src/main.vala` (own fonts.conf via `FONTCONFIG_FILE`).
 * `vapi/` — `libadwaita-1` and `libsoup-3.0` vapi snapshots: those come from the libraries,
   not from vala, and cannot be generated in a cross build.
 * `Dockerfile` — build image on top of `matras-android-build` (adds valac 0.56.19 and

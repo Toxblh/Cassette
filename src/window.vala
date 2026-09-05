@@ -191,6 +191,15 @@ public class Cassette.Window : ApplicationWindow {
                 return Source.REMOVE;
             });
         }
+        // CASSETTE_DEBUG_FONTS=1: which fonts Pango really uses for sample
+        // strings (family, weight, variations per run) and the families
+        // fontconfig knows. For "thin text / missing spaces" reports.
+        if (Environment.get_variable ("CASSETTE_DEBUG_FONTS") != null) {
+            Timeout.add_seconds (9, () => {
+                debug_fonts ();
+                return Source.REMOVE;
+            });
+        }
         if (debug_station != null || debug_picker != null) {
             Timeout.add_seconds (8, () => {
                 debug_station_hook.begin (debug_station, debug_picker != null);
@@ -391,6 +400,33 @@ public class Cassette.Window : ApplicationWindow {
             return;
         }
         player_bar_toolbar.reveal_bottom_bars = false;
+    }
+
+    void debug_fonts () {
+        var context = get_pango_context ();
+        message ("default font: %s", context.get_font_description ().to_string ());
+        string[] samples = { "Play next 3:27", "Карнавал SØMN", "<b>Bold Latin</b>", "<span weight=\"300\">Light</span>" };
+        foreach (var sample in samples) {
+            var layout = new Pango.Layout (context);
+            layout.set_markup (sample, -1);
+            var iter = layout.get_iter ();
+            do {
+                unowned Pango.LayoutRun? run = iter.get_run_readonly ();
+                if (run != null) {
+                    var font = run.item.analysis.font;
+                    message ("  \"%s\" run: %s (face \"%s\", family \"%s\")", sample,
+                        font.describe ().to_string (), font.get_face ().get_face_name (),
+                        font.get_face ().get_family ().get_name ());
+                }
+            } while (iter.next_run ());
+        }
+        Pango.FontFamily[] families;
+        context.list_families (out families);
+        var names = new StringBuilder ();
+        foreach (var family in families) {
+            names.append (family.get_name ()).append ("; ");
+        }
+        message ("fontconfig families (%d): %s", families.length, names.str);
     }
 
     static void debug_measure_tree (Gtk.Widget widget, int threshold, int depth) {

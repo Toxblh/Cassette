@@ -73,22 +73,40 @@ void android_setup () {
 }
 
 /**
- * Pins the UI font to the bundled Adwaita Sans. fontconfig only knows
- * /system/fonts here, and the default fonts.conf reads
- * $XDG_CONFIG_HOME/fontconfig/fonts.conf, so that file adds the fonts the
- * APK ships (share/fonts under XDG_DATA_DIRS) and aliases the generic
- * families to Adwaita Sans. Everything not covered (CJK, emoji) still
- * falls back to the system fonts.
+ * Pins the UI font to the bundled static Inter (share/fonts/Inter in the
+ * APK). fontconfig's stock fonts.conf pulls the user configuration in
+ * through an "xdg"-prefixed include, which needs XDG_CONFIG_HOME in the
+ * process environment — the runtime hands GLib its directories another
+ * way, so that include silently did nothing and every device fell back to
+ * its system sans (Roboto on Pixel, MiSans VF on HyperOS: hairline weight,
+ * missing spaces). Now FONTCONFIG_FILE points at a config of our own that
+ * includes the stock one, adds the bundled directory and aliases the
+ * generic families to Inter. CJK, emoji etc. still come from /system/fonts.
  */
 void android_setup_fonts () {
+    // What GLib knows about the directories, fontconfig must see too.
+    Environment.set_variable ("XDG_DATA_HOME", Environment.get_user_data_dir (), false);
+    Environment.set_variable ("XDG_CONFIG_HOME", Environment.get_user_config_dir (), false);
+    Environment.set_variable ("XDG_CACHE_HOME", Environment.get_user_cache_dir (), false);
+
     var data_dirs = Environment.get_system_data_dirs ();
     if (data_dirs.length == 0) {
         return;
     }
 
     var fonts_dir = Path.build_filename (data_dirs[0], "fonts");
-    if (!FileUtils.test (Path.build_filename (fonts_dir, "Adwaita", "AdwaitaSans-Regular.ttf"), FileTest.EXISTS)) {
+    if (!FileUtils.test (Path.build_filename (fonts_dir, "Inter", "Inter-Regular.ttf"), FileTest.EXISTS)) {
+        warning ("bundled fonts not found in %s; system fonts will be used", fonts_dir);
         return;
+    }
+
+    string? stock_conf = null;
+    foreach (var dir in Environment.get_system_config_dirs ()) {
+        var conf = Path.build_filename (dir, "fonts", "fonts.conf");
+        if (FileUtils.test (conf, FileTest.EXISTS)) {
+            stock_conf = conf;
+            break;
+        }
     }
 
     var conf_dir = Path.build_filename (Environment.get_user_config_dir (), "fontconfig");
@@ -97,12 +115,19 @@ void android_setup_fonts () {
 <!DOCTYPE fontconfig SYSTEM "fonts.dtd">
 <!-- written by Cassette on every start; see main.vala -->
 <fontconfig>
+%s
   <dir>%s</dir>
-  <alias binding="strong"><family>sans-serif</family><prefer><family>Adwaita Sans</family></prefer></alias>
-  <alias binding="strong"><family>Sans</family><prefer><family>Adwaita Sans</family></prefer></alias>
-  <alias binding="strong"><family>Cantarell</family><prefer><family>Adwaita Sans</family></prefer></alias>
+  <cachedir>%s</cachedir>
+  <alias binding="strong"><family>sans-serif</family><prefer><family>Inter</family></prefer></alias>
+  <alias binding="strong"><family>Sans</family><prefer><family>Inter</family></prefer></alias>
+  <alias binding="strong"><family>Cantarell</family><prefer><family>Inter</family></prefer></alias>
+  <alias binding="strong"><family>Adwaita Sans</family><prefer><family>Inter</family></prefer></alias>
 </fontconfig>
-""".printf (fonts_dir);
+""".printf (
+        stock_conf != null ? "  <include ignore_missing=\"yes\">%s</include>".printf (stock_conf) : "",
+        fonts_dir,
+        Path.build_filename (Environment.get_user_cache_dir (), "fontconfig")
+    );
 
     try {
         DirUtils.create_with_parents (conf_dir, 0755);
@@ -113,6 +138,7 @@ void android_setup_fonts () {
         if (old != conf) {
             FileUtils.set_contents (conf_path, conf);
         }
+        Environment.set_variable ("FONTCONFIG_FILE", conf_path, true);
     } catch (Error e) {
         warning ("fontconfig user config not written: %s", e.message);
     }

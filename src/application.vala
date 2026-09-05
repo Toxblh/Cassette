@@ -229,7 +229,9 @@ namespace Cassette {
 
 #if ANDROID
             // Bundled font (see main.vala); 11pt = 14.7px, Android's body size.
-            Gtk.Settings.get_default ().gtk_font_name = "Adwaita Sans 11";
+            // CASSETTE_DEBUG_FONT_NAME overrides the UI font for font-stack tests.
+            Gtk.Settings.get_default ().gtk_font_name =
+                Environment.get_variable ("CASSETTE_DEBUG_FONT_NAME") ?? "Inter 11";
 #endif
 
             if (main_window == null) {

@@ -87,11 +87,14 @@ if is_android
   subproject('glib-networking', default_options: ['default_library=static'])
   cassette_dependencies += dependency('gioopenssl')
 
-  # UI font. Android's Roboto comes as variable fonts that fontconfig/Pango
-  # match inconsistently across devices (regular weight picked from a
-  # different file than bold on Pixel), so the APK ships Adwaita Sans and
+  # UI font. The system sans fonts are variable fonts that render wrong on
+  # some devices (HyperOS's MiSans: hairline weight, missing spaces), so the
+  # APK ships static Inter (SIL OFL, build-aux/android/fonts/Inter) and
   # main.vala points fontconfig at it.
-  subproject('adwaita-fonts')
+  install_subdir('build-aux/android/fonts/Inter',
+    install_dir: get_option('datadir') / 'fonts',
+    install_tag: 'runtime',
+  )
 endif
 
 if host_machine.system() == 'darwin'
