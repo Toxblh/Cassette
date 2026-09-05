@@ -4,13 +4,13 @@
 #define BRIDGE "space/rirusha/cassette/SessionBridge"
 
 /* Must match SessionBridge.CMD_* */
-enum { CMD_PLAY = 0, CMD_PAUSE = 1, CMD_PLAY_PAUSE = 2, CMD_NEXT = 3, CMD_PREV = 4, CMD_STOP = 5 };
+enum { CMD_PLAY = 0, CMD_PAUSE = 1, CMD_PLAY_PAUSE = 2, CMD_NEXT = 3, CMD_PREV = 4, CMD_STOP = 5, CMD_LIKE = 6 };
 
-static CassetteNowPlayingCmd     g_on_play, g_on_pause, g_on_play_pause, g_on_next, g_on_prev;
+static CassetteNowPlayingCmd     g_on_play, g_on_pause, g_on_play_pause, g_on_next, g_on_prev, g_on_like;
 static CassetteNowPlayingSeekCmd g_on_seek;
 
 static jclass    g_class = NULL;
-static jmethodID g_init, g_update, g_update_state, g_clear;
+static jmethodID g_init, g_update, g_update_state, g_clear, g_set_liked;
 
 static gboolean
 ensure (JNIEnv *env)
@@ -26,6 +26,7 @@ ensure (JNIEnv *env)
   g_update       = (*env)->GetStaticMethodID (env, g_class, "update",      "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;DDZLjava/lang/String;)V");
   g_update_state = (*env)->GetStaticMethodID (env, g_class, "updateState", "(DZ)V");
   g_clear        = (*env)->GetStaticMethodID (env, g_class, "clear",       "()V");
+  g_set_liked    = (*env)->GetStaticMethodID (env, g_class, "setLiked",    "(Z)V");
 
   if (cassette_jni_check (env, "SessionBridge method lookup"))
     {
@@ -53,8 +54,10 @@ cassette_android_now_playing_init (CassetteNowPlayingCmd     on_play,
                                    CassetteNowPlayingCmd     on_play_pause,
                                    CassetteNowPlayingCmd     on_next,
                                    CassetteNowPlayingCmd     on_prev,
-                                   CassetteNowPlayingSeekCmd on_seek)
+                                   CassetteNowPlayingSeekCmd on_seek,
+                                   CassetteNowPlayingCmd     on_like)
 {
+  g_on_like       = on_like;
   g_on_play       = on_play;
   g_on_pause      = on_pause;
   g_on_play_pause = on_play_pause;
@@ -107,6 +110,16 @@ cassette_android_now_playing_update_state (double elapsed_sec, gboolean is_playi
 }
 
 void
+cassette_android_now_playing_set_liked (gboolean liked)
+{
+  JNIEnv *env = cassette_jni_env ();
+  if (!env || !ensure (env))
+    return;
+  (*env)->CallStaticVoidMethod (env, g_class, g_set_liked, (jboolean) liked);
+  cassette_jni_check (env, "SessionBridge.setLiked");
+}
+
+void
 cassette_android_now_playing_clear (void)
 {
   JNIEnv *env = cassette_jni_env ();
@@ -130,6 +143,7 @@ idle_cmd (gpointer data)
     case CMD_NEXT:       fn = g_on_next; break;
     case CMD_PREV:       fn = g_on_prev; break;
     case CMD_STOP:       fn = g_on_pause; break;
+    case CMD_LIKE:       fn = g_on_like; break;
     }
   if (fn) fn ();
   return G_SOURCE_REMOVE;

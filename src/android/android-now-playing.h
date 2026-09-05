@@ -17,7 +17,12 @@ void cassette_android_now_playing_init (CassetteNowPlayingCmd     on_play,
                                         CassetteNowPlayingCmd     on_play_pause,
                                         CassetteNowPlayingCmd     on_next,
                                         CassetteNowPlayingCmd     on_prev,
-                                        CassetteNowPlayingSeekCmd on_seek);
+                                        CassetteNowPlayingSeekCmd on_seek,
+                                        CassetteNowPlayingCmd     on_like);
+
+/* Like state of the current track, shown as a custom action (heart) in the
+ * system media controls; on_like is called when the user taps it. */
+void cassette_android_now_playing_set_liked (gboolean liked);
 
 void cassette_android_now_playing_update (const char *title,
                                           const char *artist,

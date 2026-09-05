@@ -11,8 +11,12 @@ public extern void cassette_android_now_playing_init (
     AndroidNowPlayingCmd     on_play_pause,
     AndroidNowPlayingCmd     on_next,
     AndroidNowPlayingCmd     on_prev,
-    AndroidNowPlayingSeekCmd on_seek
+    AndroidNowPlayingSeekCmd on_seek,
+    AndroidNowPlayingCmd     on_like
 );
+
+[CCode (cname = "cassette_android_now_playing_set_liked", cheader_filename = "android-now-playing.h")]
+public extern void cassette_android_now_playing_set_liked (bool liked);
 
 [CCode (cname = "cassette_android_now_playing_update", cheader_filename = "android-now-playing.h")]
 public extern void cassette_android_now_playing_update (

@@ -32,6 +32,9 @@ public final class SessionBridge {
 	static final int CMD_NEXT = 3;
 	static final int CMD_PREV = 4;
 	static final int CMD_STOP = 5;
+	static final int CMD_LIKE = 6;
+
+	private static final String ACTION_LIKE = "space.rirusha.cassette.LIKE";
 
 	private static final long ACTIONS =
 			PlaybackState.ACTION_PLAY | PlaybackState.ACTION_PAUSE | PlaybackState.ACTION_PLAY_PAUSE
@@ -48,6 +51,9 @@ public final class SessionBridge {
 	private static Bitmap artwork;
 	private static long generation = 0;
 	private static boolean serviceStarted = false;
+	private static boolean liked = false;
+	private static int lastState = PlaybackState.STATE_NONE;
+	private static long lastPositionMs = 0;
 
 	private SessionBridge() {}
 
@@ -90,6 +96,9 @@ public final class SessionBridge {
 				@Override public void onSkipToPrevious() { nativeCommand(CMD_PREV); }
 				@Override public void onStop() { nativeCommand(CMD_STOP); }
 				@Override public void onSeekTo(long pos) { nativeSeek(pos / 1000.0); }
+				@Override public void onCustomAction(String action, android.os.Bundle extras) {
+					if (ACTION_LIKE.equals(action)) nativeCommand(CMD_LIKE);
+				}
 			}, main);
 			session.setPlaybackState(state(PlaybackState.STATE_NONE, 0));
 		});
@@ -144,6 +153,17 @@ public final class SessionBridge {
 		});
 	}
 
+	/** Like state of the current track: drives the heart custom action. */
+	public static void setLiked(final boolean isLiked) {
+		main.post(() -> {
+			if (liked == isLiked) return;
+			liked = isLiked;
+			if (session != null && session.isActive()) {
+				session.setPlaybackState(state(lastState, lastPositionMs));
+			}
+		});
+	}
+
 	public static void clear() {
 		main.post(() -> {
 			generation++;
@@ -159,10 +179,25 @@ public final class SessionBridge {
 	// ── helpers ───────────────────────────────────────────────────────────
 
 	private static PlaybackState state(int st, long positionMs) {
-		return new PlaybackState.Builder()
+		lastState = st;
+		lastPositionMs = positionMs;
+		PlaybackState.Builder b = new PlaybackState.Builder()
 				.setActions(ACTIONS)
-				.setState(st, positionMs, st == PlaybackState.STATE_PLAYING ? 1f : 0f, SystemClock.elapsedRealtime())
-				.build();
+				.setState(st, positionMs, st == PlaybackState.STATE_PLAYING ? 1f : 0f, SystemClock.elapsedRealtime());
+		// Android 13+ renders custom actions as extra buttons in the system
+		// media controls (lock screen, quick settings). Icons come from
+		// res/drawable written by patch-android-project.py.
+		int icon = iconId(liked ? "cassette_liked" : "cassette_like");
+		if (icon != 0 && st != PlaybackState.STATE_NONE) {
+			b.addCustomAction(new PlaybackState.CustomAction.Builder(
+					ACTION_LIKE, liked ? "Unlike" : "Like", icon).build());
+		}
+		return b.build();
+	}
+
+	private static int iconId(String name) {
+		Context ctx = NativeContext.get();
+		return ctx.getResources().getIdentifier(name, "drawable", ctx.getPackageName());
 	}
 
 	private static void startService() {

@@ -26,8 +26,16 @@ public static void init () {
         on_cmd_play_pause,
         on_cmd_next,
         on_cmd_prev,
-        on_cmd_seek
+        on_cmd_seek,
+        on_cmd_like
     );
+
+    yam_talker.track_likes_end_change.connect ((track_id, is_liked) => {
+        var current = player.mode.get_current_track_info ();
+        if (current != null && current.id == track_id) {
+            cassette_android_now_playing_set_liked (is_liked);
+        }
+    });
 
     player.played.connect (on_played);
     player.paused.connect (on_paused);
@@ -68,6 +76,20 @@ static void on_cmd_seek (double position_sec) {
     player.seek ((int64) (position_sec * 1000));
 }
 
+// Heart in the system media controls: toggles the like of the current track.
+static void on_cmd_like () {
+    var current = player.mode.get_current_track_info ();
+    if (current == null) {
+        return;
+    }
+
+    if (yam_talker.likes_controller.get_content_is_liked (LikableType.TRACK, current.id)) {
+        yam_talker.unlike.begin (LikableType.TRACK, current.id);
+    } else {
+        yam_talker.like.begin (LikableType.TRACK, current.id);
+    }
+}
+
 // Player signal handlers
 
 static void on_played (YaMAPI.Track track) {
@@ -89,6 +111,10 @@ static void send_update (YaMAPI.Track track, bool is_playing) {
     if (covers.size > 0) {
         artwork_url = covers[0];
     }
+
+    cassette_android_now_playing_set_liked (
+        yam_talker.likes_controller.get_content_is_liked (LikableType.TRACK, track.id)
+    );
 
     cassette_android_now_playing_update (
         track.title ?? "",
