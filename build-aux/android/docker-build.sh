@@ -21,8 +21,7 @@ fi
 # blueprint-compiler needs current Gtk/Adw typelibs, which only the host has.
 # The .ui files go to build-aux/android/ui and data/meson.build copies them.
 echo "==> compiling blueprints on the host"
-rm -rf "$HERE/build-aux/android/ui"
-blueprint-compiler batch-compile "$HERE/build-aux/android/ui" "$HERE/data" "$HERE"/data/ui/*.blp
+make -C "$HERE" -f build-aux/android/android.mk android-blueprints
 
 run() {
   docker run --rm --platform linux/amd64 \

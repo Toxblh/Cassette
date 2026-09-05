@@ -1,0 +1,110 @@
+# Android APK through pixiewood. The whole GTK stack is built from wraps, so a
+# run takes ~20-30 min; it only triggers on pushes to the android branches and
+# by hand. Pattern: GeopJr/Tuba .github/workflows/android.yml.
+#
+# The runner is ubuntu-26.04 because blueprint-compiler needs Gtk/Adw typelibs
+# new enough for our .blp files (Adw.ButtonRow, Adw.Dialog); the vapis vala does
+# not ship (libadwaita-1, libsoup-3.0) come from build-aux/android/vapi.
+#
+# Signing: with the ANDROID_KEYSTORE (base64 .jks) and ANDROID_KEYSTORE_KEY
+# secrets the APK is signed with that key; otherwise with a throwaway key
+# generated in the run, which is enough to install and test.
+name: Android
+
+on:
+  push:
+    branches: [android, 'android-*']
+    paths-ignore: ['**.md', 'docs/**']
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NDK_VERSION: 27.2.12479018
+  PIXIEWOOD_REF: de3719725a8f6e3efe0f28203e803e7ce1904902   # sp1ritCS/gtk-android-builder, android36
+  MINI_STUDIO_REF: 8c2901968b07245ad07c1b38270928a49a510765 # sp1ritCS/mini-studio
+
+jobs:
+  apk:
+    name: APK (arm64-v8a)
+    runs-on: ubuntu-26.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/checkout@v4
+        with:
+          repository: sp1ritCS/gtk-android-builder
+          ref: ${{ env.PIXIEWOOD_REF }}
+          path: _tools/pixiewood
+
+      - uses: actions/checkout@v4
+        with:
+          repository: sp1ritCS/mini-studio
+          ref: ${{ env.MINI_STUDIO_REF }}
+          path: _tools/mini-studio
+
+      - name: Host packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            openjdk-17-jdk-headless \
+            libglib-perl libglib-object-introspection-perl libipc-run-perl libjson-perl \
+            libset-scalar-perl libxml-libxml-perl libxml-libxslt-perl gir1.2-appstream-1.0 \
+            build-essential glslc gobject-introspection libglib2.0-dev libglib2.0-dev-bin \
+            libxml2-utils ninja-build sassc gettext pkg-config cmake git \
+            valac blueprint-compiler gir1.2-gtk-4.0 gir1.2-adw-1 python3-gi \
+            desktop-file-utils appstream
+          pip install --break-system-packages 'meson>=1.11'
+          echo "valac $(valac --version); blueprint $(blueprint-compiler --version); meson $(meson --version)"
+
+      - name: Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools platforms;android-36 build-tools;36.0.0 ndk;27.2.12479018
+
+      - name: Blueprints (host typelibs)
+        run: make -f build-aux/android/android.mk android-blueprints
+
+      - name: Build
+        run: |
+          make -f build-aux/android/android.mk android release=1 \
+            PIXIEWOOD="$PWD/_tools/pixiewood/pixiewood" \
+            ANDROID_STUDIO="$PWD/_tools/mini-studio" \
+            ANDROID_SDK="$ANDROID_HOME" \
+            ANDROID_NDK="$ANDROID_HOME/ndk/$NDK_VERSION"
+
+      - name: Meson log on failure
+        if: failure()
+        run: tail -n 200 .pixiewood/bin-aarch64/meson-logs/meson-log.txt || true
+
+      - name: Sign
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE }}
+          ANDROID_KEYSTORE_KEY: ${{ secrets.ANDROID_KEYSTORE_KEY }}
+        run: |
+          export PATH="$ANDROID_HOME/build-tools/36.0.0:$PATH"
+          mkdir -p _keys
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > _keys/release.jks
+            export ANDROID_KEYSTORE_LOCATION=_keys/release.jks
+          else
+            keytool -genkeypair -keystore _keys/ci.jks -alias ci -storepass cassette-ci -keypass cassette-ci \
+              -dname "CN=Cassette CI" -keyalg RSA -keysize 2048 -validity 3650
+            export ANDROID_KEYSTORE_LOCATION=_keys/ci.jks
+            export ANDROID_KEYSTORE_KEY=cassette-ci
+          fi
+          make -f build-aux/android/android.mk android-sign
+          rm -f apks/app-universal-release.apk apks/app-universal-release.apk.idsig
+          for f in apks/app-arm64-v8a-release.apk; do mv "$f" "apks/cassette-${GITHUB_SHA::8}-arm64-v8a.apk"; done
+          rm -f apks/*.idsig
+          ls -la apks
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cassette-android-apk
+          path: apks/*.apk
+          if-no-files-found: error
+          retention-days: 30

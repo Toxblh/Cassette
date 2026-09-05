@@ -7,6 +7,7 @@
 # Pattern: Matras build-aux/android/android.mk and the Makefile of GeopJr/Tuba.
 
 ANDROID_SDK    ?= $(ANDROID_HOME)
+ANDROID_NDK    ?=
 ANDROID_STUDIO ?= /work/mini-studio
 PIXIEWOOD      ?= /work/pixiewood/pixiewood
 release        ?=
@@ -16,9 +17,16 @@ MANIFEST     := $(AUX)/space.rirusha.Cassette.xml
 PROJECT      := .pixiewood/android
 APK_DIR      := $(PROJECT)/app/build/outputs/apk/$(if $(release),release,debug)
 
-.PHONY: android android-subprojects android-prepare android-generate android-patch android-build android-sign android-clean
+.PHONY: android android-blueprints android-subprojects android-prepare android-patch-gtk android-generate android-patch android-build android-sign android-clean
 
 android: android-subprojects android-prepare android-patch-gtk android-generate android-patch android-build
+
+# blueprint-compiler validates against the host's Gtk/Adw typelibs, so the .blp
+# files are compiled wherever those are new enough (the host, not the build
+# container) and data/meson.build copies the result on Android.
+android-blueprints:
+	rm -rf $(AUX)/ui
+	blueprint-compiler batch-compile $(AUX)/ui data data/ui/*.blp
 
 # Wraps for what pixiewood does not carry itself (libsoup, openssl, json-glib,
 # libgee, sqlite3 ...). Copied, not moved: subprojects/ may hold other work.
@@ -27,9 +35,11 @@ android-subprojects:
 	cp $(AUX)/subprojects/*.wrap subprojects/
 	cp $(AUX)/subprojects/packagefiles/* subprojects/packagefiles/
 
+# ANDROID_NDK pins the toolchain; otherwise pixiewood takes the newest under $(ANDROID_SDK)/ndk.
 android-prepare:
 	$(PIXIEWOOD) prepare $(if $(release),--release,) \
-		--sdk=$(ANDROID_SDK) --android-studio=$(ANDROID_STUDIO) $(MANIFEST)
+		--sdk=$(ANDROID_SDK) $(if $(ANDROID_NDK),--toolchain=$(ANDROID_NDK),) \
+		--android-studio=$(ANDROID_STUDIO) $(MANIFEST)
 
 # Our patches on top of the GTK checkout pixiewood made (subprojects/gtk):
 # the Java glue paints the areas under the system bars with colours the app
