@@ -45,6 +45,12 @@ namespace Cassette.Client.Glagol {
             }
         }
 
+        public string icon_name {
+            owned get {
+                return GlagolDevice.platform_icon_name (platform);
+            }
+        }
+
         public string display_name {
             owned get {
                 return name != "" ? name : model;

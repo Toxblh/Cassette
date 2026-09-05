@@ -213,6 +213,7 @@ public class Cassette.StationPickerDialog : Adw.Dialog {
     class StationRow : Adw.ActionRow {
         public Station station { get; construct; }
 
+        Gtk.Image icon;
         Gtk.Image check;
         Gtk.Spinner spinner;
 
@@ -221,7 +222,8 @@ public class Cassette.StationPickerDialog : Adw.Dialog {
         }
 
         construct {
-            add_prefix (new Gtk.Image.from_icon_name ("audio-speakers-symbolic"));
+            icon = new Gtk.Image.from_icon_name (station.icon_name);
+            add_prefix (icon);
 
             check = new Gtk.Image.from_icon_name ("emblem-ok-symbolic");
             add_suffix (check);
@@ -240,6 +242,7 @@ public class Cassette.StationPickerDialog : Adw.Dialog {
             bool is_active = manager.active == station;
 
             title = station.display_name;
+            icon.icon_name = station.icon_name;
             activatable = station.online;
             sensitive = station.online;
 

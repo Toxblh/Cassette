@@ -61,13 +61,19 @@ public class Cassette.OutputButton : Gtk.Button {
             add_css_class ("accent");
             tooltip_text = _("Playing on %s").printf (station.display_name);
             if (content != null) {
+                content.icon_name = station.icon_name;
                 content.label = station.short_name;
+            } else {
+                icon_name = station.icon_name;
             }
         } else {
             remove_css_class ("accent");
             tooltip_text = _("Play on a Yandex station");
             if (content != null) {
+                content.icon_name = "audio-speakers-symbolic";
                 content.label = _("Play on…");
+            } else {
+                icon_name = "audio-speakers-symbolic";
             }
         }
     }

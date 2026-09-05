@@ -50,6 +50,42 @@ namespace Cassette.Client.Glagol {
             return platform_display_name (platform);
         }
 
+        /**
+         * Symbolic icon for a device platform; bundled from
+         * https://github.com/iswitch/ha-yandex-icons (data/assets/icons/yandex-*).
+         */
+        public static string platform_icon_name (string platform) {
+            switch (platform) {
+                case "yandexstation":
+                    return "yandex-station-symbolic";
+                case "yandexstation_2":
+                case "saturn":
+                    return "yandex-station-max-symbolic";
+                case "yandexmini":
+                    return "yandex-station-mini-symbolic";
+                case "yandexmini_2":
+                    return "yandex-station-mini-2-symbolic";
+                case "yandexmidi":
+                    return "yandex-station-2-symbolic";
+                case "cucumber":
+                    return "yandex-station-midi-symbolic";
+                case "yandexmicro":
+                    return "yandex-station-lite-symbolic";
+                case "plum":
+                    return "yandex-station-lite-2-symbolic";
+                case "bass":
+                    return "yandex-station-duo-max-symbolic";
+                case "yandexmodule":
+                case "chiron":
+                    return "yandex-module-symbolic";
+                case "yandexmodule_2":
+                case "chiron_2":
+                    return "yandex-module-2-symbolic";
+                default:
+                    return "audio-speakers-symbolic";
+            }
+        }
+
         public static string platform_display_name (string platform) {
             switch (platform) {
                 case "yandexstation":

@@ -46,6 +46,15 @@ playlist/album/artist as a context, a single track otherwise).
   with a `VolumeProvider`, 0..100, ±5 per key press). Back to the phone's stream
   when disconnected (`src/android/now-playing.vala`, `SessionBridge.setRemoteVolume`).
 
+## Icons
+
+Per-model symbolic icons (`data/assets/icons/yandex-*-symbolic.svg`) come from
+[iswitch/ha-yandex-icons](https://github.com/iswitch/ha-yandex-icons), recoloured
+for GTK's symbolic pipeline (16 px, fill `#2e3436`, 24-unit viewBox). The
+platform → icon map is `GlagolDevice.platform_icon_name`; unknown platforms fall
+back to `audio-speakers-symbolic`. Used by the picker rows, `OutputButton` (the
+active station's icon) and thus the station bar chip.
+
 ## Testing
 
 * Unit: `build/tests/glagol-test` (query/response parsing, token parsing).
