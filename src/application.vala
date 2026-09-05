@@ -138,6 +138,11 @@ namespace Cassette {
 
             player.current_track_finish_loading.connect (show_now_playing_notif);
 
+            // The station playback was last sent to, if it is still playing.
+            authenticator.success.connect (() => {
+                Cassette.Client.Glagol.station_manager.reconnect_last.begin ();
+            });
+
             window_removed.connect ((win) => {
                 Logger.info ("Window removed: %s".printf (win.get_type ().name ()));
             });

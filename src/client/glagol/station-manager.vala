@@ -125,7 +125,7 @@ namespace Cassette.Client.Glagol {
                 found[device.device_id] = device;
             });
             try {
-                yield discovery.scan_async ();
+                yield discovery.scan_async (cached_hosts ());
             } catch (Error e) {
                 Logger.warning ("Station scan: %s".printf (e.message));
             }
@@ -172,7 +172,72 @@ namespace Cassette.Client.Glagol {
                 stations.append (station);
             }
 
+            remember_hosts ();
             scanning = false;
+        }
+
+        // "id=host" pairs of stations seen on the network, so the next scan
+        // can ask them directly (multicast-filtered wifi, emulators).
+        // Plain arrays on purpose: GSettings wants NULL-terminated strv,
+        // which Gee's to_array () does not give.
+        string[] cached_hosts () {
+            string[] hosts = {};
+            foreach (var entry in settings.get_strv ("station-hosts")) {
+                var parts = entry.split ("=", 2);
+                if (parts.length == 2 && parts[1] != "") {
+                    hosts += parts[1];
+                }
+            }
+            return hosts;
+        }
+
+        void remember_hosts () {
+            string[] entries = {};
+            foreach (var entry in settings.get_strv ("station-hosts")) {
+                var parts = entry.split ("=", 2);
+                if (parts.length == 2 && by_id.has_key (parts[0]) && !by_id[parts[0]].online) {
+                    entries += entry;
+                }
+            }
+            foreach (var station in by_id.values) {
+                if (station.online) {
+                    entries += "%s=%s".printf (station.id, station.host);
+                }
+            }
+            settings.set_strv ("station-hosts", entries);
+        }
+
+        /**
+         * On start-up: if the station playback was last sent to is on the
+         * network and currently playing, pick it up again so the app opens
+         * on what is actually sounding. Quiet otherwise.
+         */
+        public async void reconnect_last () {
+            string last = settings.get_string ("last-station");
+            if (last == "" || active != null) {
+                return;
+            }
+
+            yield refresh ();
+
+            if (!by_id.has_key (last) || !by_id[last].online || active != null) {
+                return;
+            }
+
+            var station = by_id[last];
+            try {
+                yield connect_station (station);
+            } catch (Error e) {
+                Logger.info ("Not reconnecting to %s: %s".printf (station.display_name, e.message));
+                return;
+            }
+
+            if (state == null || !state.playing) {
+                disconnect_station ();
+                return;
+            }
+
+            message (_("Playing on %s").printf (station.short_name));
         }
 
         async string get_device_token (Station station) throws Error {

@@ -4,7 +4,9 @@ import android.content.Context;
 import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.media.AudioAttributes;
 import android.media.MediaMetadata;
+import android.media.VolumeProvider;
 import android.media.session.MediaSession;
 import android.media.session.PlaybackState;
 import android.os.Handler;
@@ -59,6 +61,9 @@ public final class SessionBridge {
 
 	static native void nativeCommand(int cmd);
 	static native void nativeSeek(double positionSec);
+	static native void nativeVolume(int percent);
+
+	private static VolumeProvider remoteVolume = null;
 
 	static MediaSession.Token token() {
 		return session == null ? null : session.getSessionToken();
@@ -150,6 +155,43 @@ public final class SessionBridge {
 			session.setPlaybackState(state(isPlaying ? PlaybackState.STATE_PLAYING : PlaybackState.STATE_PAUSED,
 					(long) (elapsedSec * 1000)));
 			if (changed) PlaybackService.refresh(NativeContext.get());
+		});
+	}
+
+	/**
+	 * Remote playback (a Yandex station): the volume keys and the system
+	 * volume slider set the station's volume through this provider instead
+	 * of the phone's stream. Back to local when remote is false.
+	 */
+	public static void setRemoteVolume(final boolean remote, final int percent) {
+		main.post(() -> {
+			if (session == null) return;
+			if (!remote) {
+				if (remoteVolume != null) {
+					remoteVolume = null;
+					session.setPlaybackToLocal(new AudioAttributes.Builder()
+							.setUsage(AudioAttributes.USAGE_MEDIA)
+							.setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+							.build());
+				}
+				return;
+			}
+			if (remoteVolume == null) {
+				remoteVolume = new VolumeProvider(VolumeProvider.VOLUME_CONTROL_ABSOLUTE, 100, percent) {
+					@Override public void onSetVolumeTo(int volume) {
+						setCurrentVolume(volume);
+						nativeVolume(volume);
+					}
+					@Override public void onAdjustVolume(int direction) {
+						int v = Math.max(0, Math.min(100, getCurrentVolume() + direction * 5));
+						setCurrentVolume(v);
+						nativeVolume(v);
+					}
+				};
+				session.setPlaybackToRemote(remoteVolume);
+			} else if (remoteVolume.getCurrentVolume() != percent) {
+				remoteVolume.setCurrentVolume(percent);
+			}
 		});
 	}
 

@@ -33,14 +33,34 @@ playlist/album/artist as a context, a single track otherwise).
   station, load its current track into `Player`, seek to the station's position.
 * **State**: the station pushes state on changes and on each keepalive ping;
   `StationBar` advances the position locally between updates.
-* **Last station** id is stored in `last-station` (client settings); it is not
-  auto-reconnected.
+* **Start-up**: after sign-in `StationManager.reconnect_last` scans, and if the
+  station from `last-station` is on the network *and playing*, connects to it
+  (toast "Playing on …"), so the app opens on what is actually sounding. A
+  paused or absent station is left alone.
+* **Scan** queries multicast and, additionally, the addresses of stations seen
+  before (`station-hosts`, "id=host" pairs) as unicast — for wifi that filters
+  multicast and for the Android emulator behind NAT.
+* **Android media session** mirrors the station while one is active: its
+  track/position/like state, play/pause/next/prev/seek forwarded to it, and the
+  hardware volume keys set the station's volume (`MediaSession.setPlaybackToRemote`
+  with a `VolumeProvider`, 0..100, ±5 per key press). Back to the phone's stream
+  when disconnected (`src/android/now-playing.vala`, `SessionBridge.setRemoteVolume`).
 
 ## Testing
 
 * Unit: `build/tests/glagol-test` (query/response parsing, token parsing).
 * End-to-end (real device, needs the app's sign-in): `CASSETTE_GLAGOL_E2E_HOST=<ip> build/tests/glagol-e2e-test -p /glagol/e2e/manager`
-  — list, connect, playlist from the app, transport, seek, volume, take back.
+  — list, connect, playlist from the app, transport, seek, volume, reconnect on
+  start (playing vs paused), take back. Helpers: `-p /glagol/e2e/discovery`
+  (scan only, no account), `-p /glagol/e2e/leave` leaves the station playing
+  (`CASSETTE_GLAGOL_E2E_ACTION=pause|status`) for testing other clients.
+  Test station: the Lite (192.168.10.35).
+* Android emulator: seed `last-station` and `station-hosts` in the app's GSettings
+  keyfile (`files/etc/glib-2.0/settings/keyfile` under the app's external dir),
+  leave the station playing from the desktop, start the app: the station bar must
+  show its track and `dumpsys media_session` must report `volumeType=REMOTE`;
+  `input keyevent KEYCODE_VOLUME_UP` / `KEYCODE_MEDIA_PAUSE` must change the
+  station (check with the `leave` helper's `status` action).
 * UI without clicking: `CASSETTE_DEBUG_STATION=<device id>` connects after start,
   `CASSETTE_DEBUG_PICKER=1` opens the picker, `CASSETTE_DEBUG_SHOT=<png>` renders
   the window from inside GTK 9 s later.

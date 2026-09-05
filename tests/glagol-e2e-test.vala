@@ -213,6 +213,28 @@ async void run_manager (string host) throws Error {
     stdout.printf ("after next: \"%s\"\n", manager.state.title);
     stdout.flush ();
 
+    // Start-up scenario: the station keeps playing, the app "reopens" and
+    // must pick the station up again (reconnect_last), then leaves it
+    // alone when it is paused.
+    manager.play ();
+    yield wait_seconds (2);
+    manager.disconnect_station ();
+    assert (manager.active == null);
+    yield manager.reconnect_last ();
+    stdout.printf ("reconnect while playing: active=%s\n", manager.active != null ? manager.active.display_name : "none");
+    stdout.flush ();
+    assert (manager.active == target);
+    manager.pause ();
+    yield wait_seconds (2);
+    manager.disconnect_station ();
+    yield manager.reconnect_last ();
+    stdout.printf ("reconnect while paused: active=%s\n", manager.active != null ? manager.active.display_name : "none");
+    stdout.flush ();
+    assert (manager.active == null);
+    yield manager.transfer_to (target);
+    manager.play ();
+    yield wait_seconds (2);
+
     yield manager.take_back ();
     yield wait_seconds (4);
     var local = player.mode.get_current_track_info ();
@@ -223,6 +245,38 @@ async void run_manager (string host) throws Error {
     assert (manager.active == null);
     assert (local != null);
     player.stop ();
+}
+
+async void run_leave (string host, bool pause) throws Error {
+    var manager = Cassette.Client.Glagol.station_manager;
+    yield manager.refresh ();
+    Station? target = null;
+    for (uint i = 0; i < manager.stations.get_n_items (); i++) {
+        var station = (Station) manager.stations.get_item (i);
+        if (station.host == host) {
+            target = station;
+        }
+    }
+    if (target == null) {
+        throw new IOError.NOT_FOUND ("Station %s not found".printf (host));
+    }
+    yield manager.connect_station (target);
+    if (Environment.get_variable ("CASSETTE_GLAGOL_E2E_ACTION") == "status") {
+        stdout.printf ("status %s: playing=%s \"%s\" %.1f/%.1f vol=%.2f\n", target.display_name,
+            manager.state.playing.to_string (), manager.state.title,
+            manager.state.progress, manager.state.duration, manager.state.volume);
+        manager.disconnect_station ();
+        return;
+    }
+    if (pause) {
+        manager.pause ();
+    } else {
+        manager.play ();
+    }
+    yield wait_seconds (4);
+    stdout.printf ("left %s: playing=%s \"%s\"\n", target.display_name,
+        manager.state.playing.to_string (), manager.state.title);
+    manager.disconnect_station ();
 }
 
 async Gee.ArrayList<YaMAPI.Track> fetch_liked (out string oid) {
@@ -264,6 +318,37 @@ public int main (string[] args) {
     Intl.textdomain (Config.GETTEXT_PACKAGE);
 
     Test.init (ref args);
+
+    // Network only, no account: what does an mDNS scan see from here?
+    Test.add_func ("/glagol/e2e/discovery", () => {
+        var loop = new MainLoop ();
+        Error? failure = null;
+        int found = 0;
+        var discovery = new DeviceDiscovery ();
+        discovery.device_found.connect ((device) => {
+            found++;
+            stdout.printf ("found: %s %s %s:%u\n", device.device_id, device.platform, device.host, (uint) device.port);
+            stdout.flush ();
+        });
+        string[] hosts = {};
+        string? extra = Environment.get_variable ("CASSETTE_GLAGOL_E2E_HOST");
+        if (extra != null && extra != "") {
+            hosts += extra;
+        }
+        discovery.scan_async.begin (hosts, (obj, res) => {
+            try {
+                discovery.scan_async.end (res);
+            } catch (Error e) {
+                failure = e;
+            }
+            loop.quit ();
+        });
+        loop.run ();
+        if (failure != null) {
+            Test.fail_printf ("Scan failed: %s", failure.message);
+        }
+        stdout.printf ("devices found: %d\n", found);
+    });
 
     Test.add_func ("/glagol/e2e/connect_report_pause", () => {
         string? host = Environment.get_variable ("CASSETTE_GLAGOL_E2E_HOST");
@@ -335,16 +420,42 @@ public int main (string[] args) {
             }
             loop.quit ();
         });
-        GLib.Timeout.add_seconds (90, () => {
+        GLib.Timeout.add_seconds (150, () => {
             loop.quit ();
             if (failure == null) {
-                failure = new IOError.TIMED_OUT ("Manager test timed out after 90 seconds");
+                failure = new IOError.TIMED_OUT ("Manager test timed out after 150 seconds");
             }
             return GLib.Source.REMOVE;
         });
         loop.run ();
         if (failure != null) {
             Test.fail_printf ("Manager test failed: %s", failure.message);
+        }
+    });
+
+    // Helper scenario for testing other clients: leave the station playing
+    // (CASSETTE_GLAGOL_E2E_ACTION=pause to leave it paused).
+    Test.add_func ("/glagol/e2e/leave", () => {
+        string? host = Environment.get_variable ("CASSETTE_GLAGOL_E2E_HOST");
+        if (host == null || host == "") {
+            Test.skip ("Set CASSETTE_GLAGOL_E2E_HOST=<station IP>");
+            return;
+        }
+        Cassette.Client.init (false);
+        bool pause = Environment.get_variable ("CASSETTE_GLAGOL_E2E_ACTION") == "pause";
+        var loop = new MainLoop ();
+        Error? failure = null;
+        run_leave.begin (host, pause, (obj, res) => {
+            try {
+                run_leave.end (res);
+            } catch (Error e) {
+                failure = e;
+            }
+            loop.quit ();
+        });
+        loop.run ();
+        if (failure != null) {
+            Test.fail_printf ("Leave failed: %s", failure.message);
         }
     });
 
@@ -375,7 +486,7 @@ public int main (string[] args) {
             loop.quit ();
         });
 
-        GLib.Timeout.add_seconds (90, () => {
+        GLib.Timeout.add_seconds (150, () => {
             loop.quit ();
             if (failure == null) {
                 failure = new IOError.TIMED_OUT ("Stability test timed out after 90 seconds");

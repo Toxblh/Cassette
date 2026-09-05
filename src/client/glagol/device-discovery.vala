@@ -47,8 +47,11 @@ namespace Cassette.Client.Glagol {
          * replies (QU bit): they then reach us on any port, which matters
          * when 5353 is taken by a resolver daemon and on Android, where
          * receiving multicast needs a wifi multicast lock.
+         *
+         * @param unicast_hosts addresses to query directly as well: stations
+         * seen before, for networks that filter multicast (and emulators).
          */
-        public async void scan_async () throws Error {
+        public async void scan_async (string[] unicast_hosts = {}) throws Error {
             var socket = new Socket (SocketFamily.IPV4, SocketType.DATAGRAM, SocketProtocol.UDP);
 
             try {
@@ -63,8 +66,32 @@ namespace Cassette.Client.Glagol {
             }
             socket.blocking = false;
 
+            var query = build_query (SERVICE_NAME);
             var dest = new InetSocketAddress (new InetAddress.from_string (MDNS_ADDR), MDNS_PORT);
-            socket.send_to (dest, build_query (SERVICE_NAME));
+            Error? multicast_error = null;
+            try {
+                socket.send_to (dest, query);
+            } catch (Error e) {
+                // "No route to host" while the network is changing (VPN,
+                // container bridges): the known stations are still asked
+                // directly below.
+                multicast_error = e;
+            }
+            int sent = multicast_error == null ? 1 : 0;
+            foreach (var host in unicast_hosts) {
+                try {
+                    socket.send_to (new InetSocketAddress (new InetAddress.from_string (host), MDNS_PORT), query);
+                    sent++;
+                } catch (Error e) {
+                    Logger.debug ("mDNS unicast to %s: %s".printf (host, e.message));
+                }
+            }
+            if (sent == 0) {
+                throw multicast_error;
+            }
+            if (multicast_error != null) {
+                Logger.debug ("mDNS multicast query failed, unicast only: %s".printf (multicast_error.message));
+            }
 
             var ptr_names = new Gee.HashSet<string> ();
             var srv_by_name = new Gee.HashMap<string, SrvRecord?> ();
