@@ -34,6 +34,7 @@ public class Cassette.PrimaryMenuButton : CustomMenuButton {
             {_("Parse URL from clipboard"), "app.parse-url", 1},
             {_("Preferences"), "win.preferences", 2},
             {_("Keyboard Shortcuts"), "win.show-help-overlay", 2},
+            {_("Font check…"), "app.font-check", 2},
             {_("About Cassette"), "win.about", 2}
         };
     }

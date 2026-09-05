@@ -95,6 +95,12 @@ if is_android
     install_dir: get_option('datadir') / 'fonts',
     install_tag: 'runtime',
   )
+  # Unmistakable pixel font for the "Font check" dialog: proves on any
+  # device whether bundled fonts are loaded and applied at all.
+  install_data('build-aux/android/fonts/PressStart2P-Regular.ttf',
+    install_dir: get_option('datadir') / 'fonts' / 'Test',
+    install_tag: 'runtime',
+  )
 endif
 
 if host_machine.system() == 'darwin'

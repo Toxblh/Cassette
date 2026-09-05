@@ -403,9 +403,32 @@ public class Cassette.Window : ApplicationWindow {
     }
 
     void debug_fonts () {
+        message ("%s", font_report ());
+    }
+
+    /**
+     * What Pango really uses: default font, the font of every run of a few
+     * sample strings, whether the bundled font directory exists, and the
+     * font families fontconfig knows. Shown by the "Font check" dialog so a
+     * screenshot from a device without adb is enough to diagnose.
+     */
+    public string font_report () {
+        var report = new StringBuilder ();
         var context = get_pango_context ();
-        message ("default font: %s", context.get_font_description ().to_string ());
-        string[] samples = { "Play next 3:27", "Карнавал SØMN", "<b>Bold Latin</b>", "<span weight=\"300\">Light</span>" };
+        report.append_printf ("default font: %s\n", context.get_font_description ().to_string ());
+        report.append_printf ("FONTCONFIG_FILE: %s\n", Environment.get_variable ("FONTCONFIG_FILE") ?? "(unset)");
+        report.append_printf ("setup: %s\n", Environment.get_variable ("CASSETTE_FONTS_STATUS") ?? "(not run)");
+        report.append_printf ("XDG_CONFIG_HOME: %s\n", Environment.get_variable ("XDG_CONFIG_HOME") ?? "(unset)");
+        foreach (var dir in Environment.get_system_data_dirs ()) {
+            var inter = Path.build_filename (dir, "fonts", "Inter", "Inter-Regular.ttf");
+            if (FileUtils.test (inter, FileTest.EXISTS)) {
+                report.append_printf ("bundled Inter: %s\n", inter);
+            }
+        }
+        string[] samples = {
+            "Play next 3:27", "Карнавал SØMN", "<b>Bold Latin</b>", "<span weight=\"300\">Light</span>",
+            "<span font_family=\"Press Start 2P\">Test</span>"
+        };
         foreach (var sample in samples) {
             var layout = new Pango.Layout (context);
             layout.set_markup (sample, -1);
@@ -414,9 +437,9 @@ public class Cassette.Window : ApplicationWindow {
                 unowned Pango.LayoutRun? run = iter.get_run_readonly ();
                 if (run != null) {
                     var font = run.item.analysis.font;
-                    message ("  \"%s\" run: %s (face \"%s\", family \"%s\")", sample,
-                        font.describe ().to_string (), font.get_face ().get_face_name (),
-                        font.get_face ().get_family ().get_name ());
+                    report.append_printf ("\"%s\" → %s (%s %s)\n", sample,
+                        font.describe ().to_string (), font.get_face ().get_family ().get_name (),
+                        font.get_face ().get_face_name ());
                 }
             } while (iter.next_run ());
         }
@@ -426,7 +449,8 @@ public class Cassette.Window : ApplicationWindow {
         foreach (var family in families) {
             names.append (family.get_name ()).append ("; ");
         }
-        message ("fontconfig families (%d): %s", families.length, names.str);
+        report.append_printf ("fontconfig families (%d): %s", families.length, names.str);
+        return report.str;
     }
 
     static void debug_measure_tree (Gtk.Widget widget, int threshold, int depth) {

@@ -46,14 +46,23 @@ void android_setup () {
     // Debug switches: `adb shell` cannot pass environment variables, so
     // KEY=VALUE lines from <app files dir>/debug.env become the environment
     // (CASSETTE_DEBUG_*, G_MESSAGES_DEBUG, ...). Absent in normal use.
+    // Absent in normal use — and an unhandled error here would end this
+    // whole function (Vala returns on unhandled errors), taking the font
+    // setup below with it. That is exactly what happened on devices
+    // without the file.
     var debug_env = Path.build_filename (Environment.get_user_data_dir (), "..", "debug.env");
-    string debug_lines;
-    if (FileUtils.get_contents (debug_env, out debug_lines)) {
-        foreach (var line in debug_lines.split ("\n")) {
-            var parts = line.strip ().split ("=", 2);
-            if (parts.length == 2 && parts[0] != "") {
-                Environment.set_variable (parts[0], parts[1], true);
+    if (FileUtils.test (debug_env, FileTest.EXISTS)) {
+        try {
+            string debug_lines;
+            FileUtils.get_contents (debug_env, out debug_lines);
+            foreach (var line in debug_lines.split ("\n")) {
+                var parts = line.strip ().split ("=", 2);
+                if (parts.length == 2 && parts[0] != "") {
+                    Environment.set_variable (parts[0], parts[1], true);
+                }
             }
+        } catch (Error e) {
+            warning ("debug.env not read: %s", e.message);
         }
     }
 
@@ -97,6 +106,7 @@ void android_setup_fonts () {
     var fonts_dir = Path.build_filename (data_dirs[0], "fonts");
     if (!FileUtils.test (Path.build_filename (fonts_dir, "Inter", "Inter-Regular.ttf"), FileTest.EXISTS)) {
         warning ("bundled fonts not found in %s; system fonts will be used", fonts_dir);
+        Environment.set_variable ("CASSETTE_FONTS_STATUS", "bundled fonts not found in %s".printf (fonts_dir), true);
         return;
     }
 
@@ -109,8 +119,12 @@ void android_setup_fonts () {
         }
     }
 
-    var conf_dir = Path.build_filename (Environment.get_user_config_dir (), "fontconfig");
-    var conf_path = Path.build_filename (conf_dir, "fonts.conf");
+    // External storage first; some vendors make it read-only or slow to
+    // appear, so the app-private directory (parent of share/) is the fallback.
+    string[] conf_dirs = {
+        Path.build_filename (Environment.get_user_config_dir (), "fontconfig"),
+        Path.build_filename (data_dirs[0], "..", "fontconfig")
+    };
     var conf = """<?xml version="1.0"?>
 <!DOCTYPE fontconfig SYSTEM "fonts.dtd">
 <!-- written by Cassette on every start; see main.vala -->
@@ -129,18 +143,24 @@ void android_setup_fonts () {
         Path.build_filename (Environment.get_user_cache_dir (), "fontconfig")
     );
 
-    try {
-        DirUtils.create_with_parents (conf_dir, 0755);
-        string? old = null;
-        if (FileUtils.test (conf_path, FileTest.EXISTS)) {
-            FileUtils.get_contents (conf_path, out old);
+    foreach (var conf_dir in conf_dirs) {
+        var conf_path = Path.build_filename (conf_dir, "fonts.conf");
+        try {
+            DirUtils.create_with_parents (conf_dir, 0755);
+            string? old = null;
+            if (FileUtils.test (conf_path, FileTest.EXISTS)) {
+                FileUtils.get_contents (conf_path, out old);
+            }
+            if (old != conf) {
+                FileUtils.set_contents (conf_path, conf);
+            }
+            Environment.set_variable ("FONTCONFIG_FILE", conf_path, true);
+            Environment.set_variable ("CASSETTE_FONTS_STATUS", "config %s".printf (conf_path), true);
+            return;
+        } catch (Error e) {
+            warning ("fontconfig config not written to %s: %s", conf_path, e.message);
+            Environment.set_variable ("CASSETTE_FONTS_STATUS", "config write failed: %s".printf (e.message), true);
         }
-        if (old != conf) {
-            FileUtils.set_contents (conf_path, conf);
-        }
-        Environment.set_variable ("FONTCONFIG_FILE", conf_path, true);
-    } catch (Error e) {
-        warning ("fontconfig user config not written: %s", e.message);
     }
 }
 #endif

@@ -54,6 +54,7 @@ namespace Cassette {
             { "share-current-track", on_share_current_track_action},
             { "parse-url", on_parse_url_action },
             { "play-on", on_play_on_action },
+            { "font-check", on_font_check_action },
             { "open-account", on_open_account_action },
             { "open-plus", on_open_plus_action },
             { "get-plus", on_get_plus_action },
@@ -445,6 +446,67 @@ namespace Cassette {
                     show_message (_("Albums view not implemented yet"));
                 }
             }
+        }
+
+        // Samples in the weights the UI uses plus Pango's own account of the
+        // fonts: for "thin text" reports from devices we cannot attach to.
+        void on_font_check_action () {
+            if (main_window == null) {
+                return;
+            }
+            var box = new Gtk.Box (Gtk.Orientation.VERTICAL, 8) {
+                margin_top = 12, margin_bottom = 12, margin_start = 12, margin_end = 12
+            };
+            string[] samples = {
+                "Regular: Play next 3:27 Карнавал",
+                "<span weight=\"300\">Light 300: Play next 3:27</span>",
+                "<b>Bold: Play next 3:27 Карнавал</b>",
+                "<span size=\"large\">Large: The quick brown fox</span>"
+            };
+            foreach (var sample in samples) {
+                box.append (new Gtk.Label (sample) { use_markup = true, xalign = 0, wrap = true });
+            }
+            var dim = new Gtk.Label ("Dim label: Play next 3:27 Карнавал") { xalign = 0, wrap = true };
+            dim.add_css_class ("dim-label");
+            box.append (dim);
+
+            // Bundled pixel font: if this line is not pixelated, bundled
+            // fonts are not loaded on this device at all.
+            box.append (new Gtk.Label (
+                "<span font_family=\"Press Start 2P\" size=\"small\">Test font: Play next 3:27 Карнавал</span>"
+            ) { use_markup = true, xalign = 0, wrap = true });
+            var settings = Gtk.Settings.get_default ();
+            var test_font_row = new Adw.SwitchRow () {
+                title = "Use the test font for the whole UI",
+                subtitle = "Press Start 2P instead of Inter, until restart",
+                active = settings.gtk_font_name.has_prefix ("Press Start")
+            };
+            test_font_row.notify["active"].connect (() => {
+                settings.gtk_font_name = test_font_row.active ? "Press Start 2P 8" : "Inter 11";
+            });
+            var test_group = new Adw.PreferencesGroup ();
+            test_group.add (test_font_row);
+            box.append (test_group);
+            var report = new Gtk.Label (main_window.font_report ()) {
+                xalign = 0, wrap = true, selectable = true, wrap_mode = Pango.WrapMode.WORD_CHAR
+            };
+            report.add_css_class ("caption");
+            report.add_css_class ("monospace");
+            box.append (report);
+
+            var dialog = new Adw.Dialog () {
+                title = _("Font check"),
+                content_width = 420,
+                content_height = 640,
+                child = new Adw.ToolbarView () {
+                    content = new Gtk.ScrolledWindow () {
+                        hscrollbar_policy = Gtk.PolicyType.NEVER,
+                        child = box
+                    }
+                }
+            };
+            ((Adw.ToolbarView) dialog.child).add_top_bar (new Adw.HeaderBar ());
+            dialog.present (main_window);
         }
 
         void on_play_on_action () {
