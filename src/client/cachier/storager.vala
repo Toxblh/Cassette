@@ -837,74 +837,76 @@ namespace Cassette.Client.Cachier {
             return {size, unit};
         }
 
+        /**
+         * Size of a directory tree in bytes, skipping files whose name ends
+         * with one of the suffixes. Portable: `du --exclude` is GNU-only and
+         * missing on Android and macOS, where the preferences showed 0.
+         */
+        static uint64 dir_size (File dir, string[] exclude_suffixes) {
+            uint64 total = 0;
+            try {
+                var children = dir.enumerate_children (
+                    FileAttribute.STANDARD_NAME + "," + FileAttribute.STANDARD_TYPE + "," + FileAttribute.STANDARD_SIZE,
+                    FileQueryInfoFlags.NOFOLLOW_SYMLINKS
+                );
+                FileInfo? info;
+                while ((info = children.next_file ()) != null) {
+                    var child = dir.get_child (info.get_name ());
+                    if (info.get_file_type () == FileType.DIRECTORY) {
+                        total += dir_size (child, exclude_suffixes);
+                        continue;
+                    }
+                    bool excluded = false;
+                    foreach (var suffix in exclude_suffixes) {
+                        if (info.get_name ().has_suffix (suffix)) {
+                            excluded = true;
+                            break;
+                        }
+                    }
+                    if (!excluded) {
+                        total += info.get_size ();
+                    }
+                }
+            } catch (Error e) {
+                Logger.warning ("Directory size of %s: %s".printf (dir.peek_path (), e.message));
+            }
+            return total;
+        }
+
+        /** "12.3M"-style string as `du -h` prints it, for to_human. */
+        static string format_du (uint64 bytes) {
+            string[] units = { "B", "K", "M", "G" };
+            double value = bytes;
+            int unit = 0;
+            while (value >= 1024 && unit < units.length - 1) {
+                value /= 1024;
+                unit++;
+            }
+            return unit == 0 ? "%.0f%s".printf (value, units[unit]) : "%.1f%s".printf (value, units[unit]);
+        }
+
         public async HumanitySize get_temp_size () {
             string size = "";
-
             threader.add (() => {
-                try {
-                    Process.spawn_command_line_sync ("du -sh %s --exclude=\"*.log\"".printf (
-                        storager.cache_dir_file.peek_path ()
-                    ), out size);
-
-                    Regex regex = null;
-                    regex = new Regex ("^[\\d.,]+[A-Z]", RegexCompileFlags.OPTIMIZE, RegexMatchFlags.NOTEMPTY);
-
-                    MatchInfo match_info;
-                    if (regex.match (size, 0, out match_info)) {
-                        size = match_info.fetch (0);
-                    } else {
-                        size = "";
-                    }
-
-                } catch (Error e) {
-                    Logger.warning (_("Error while getting cache directory size. Message %s").printf (e.message));
-                }
-
+                size = format_du (dir_size (storager.cache_dir_file, { ".log" }));
                 Idle.add (get_temp_size.callback);
             });
 
             yield;
 
-            if (size != "") {
-                return to_human (size);
-            } else {
-                return to_human ("0B");
-            }
+            return to_human (size != "" ? size : "0B");
         }
 
         public async HumanitySize get_perm_size () {
             string size = "";
-
             threader.add (() => {
-                try {
-                    Process.spawn_command_line_sync ("du -sh %s --exclude=\"*.db\" --exclude=\"*.cookies\"".printf (
-                        storager.data_dir_file.peek_path ()
-                    ), out size);
-
-                    Regex regex = null;
-                    regex = new Regex ("^[\\d.,]+[A-Z]", RegexCompileFlags.OPTIMIZE, RegexMatchFlags.NOTEMPTY);
-
-                    MatchInfo match_info;
-                    if (regex.match (size, 0, out match_info)) {
-                        size = match_info.fetch (0);
-                    } else {
-                        size = "";
-                    }
-
-                } catch (Error e) {
-                    Logger.warning (_("Error while getting permanent directory size. Message %s").printf (e.message));
-                }
-
+                size = format_du (dir_size (storager.data_dir_file, { ".db", ".cookies" }));
                 Idle.add (get_perm_size.callback);
             });
 
             yield;
 
-            if (size != "") {
-                return to_human (size);
-            } else {
-                return to_human ("0B");
-            }
+            return to_human (size != "" ? size : "0B");
         }
     }
 }
