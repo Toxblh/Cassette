@@ -136,7 +136,77 @@ public class Cassette.Window : ApplicationWindow {
     }
 #endif
 
+    /**
+     * Search: the entry under the header bar pushes a SearchView on the
+     * current page root, or re-queries the one already on top.
+     */
+    void run_search (string text) {
+        var query = text.strip ();
+        if (query == "" || current_view == null) {
+            return;
+        }
+        var top = current_view.visible_view as SearchView;
+        if (top != null) {
+            top.query = query;
+            top.refresh.begin ();
+        } else {
+            current_view.add_view (new SearchView (query));
+        }
+    }
+
     construct {
+        search_entry.search_changed.connect (() => {
+            run_search (search_entry.text);
+        });
+        search_entry.activate.connect (() => {
+            run_search (search_entry.text);
+        });
+        header_bar.notify["search-active"].connect (() => {
+            if (header_bar.search_active) {
+                search_entry.grab_focus ();
+            }
+        });
+
+        // CASSETTE_DEBUG_SHOT=<file.png>: render the window from inside GTK
+        // (screen capture needs permissions a terminal rarely has).
+        var shot = Environment.get_variable ("CASSETTE_DEBUG_SHOT");
+        if (shot != null) {
+            Timeout.add_seconds (12, () => {
+                try {
+                    var paintable = new Gtk.WidgetPaintable (this);
+                    var snapshot = new Gtk.Snapshot ();
+                    paintable.snapshot (snapshot, get_width (), get_height ());
+                    var node = snapshot.free_to_node ();
+                    if (node != null) {
+                        var texture = get_renderer ().render_texture (node, null);
+                        texture.save_to_png (shot);
+                        message ("debug shot saved to %s", shot);
+                    }
+                } catch (Error e) {
+                    warning ("debug shot: %s", e.message);
+                }
+                return Source.REMOVE;
+            });
+        }
+
+        // CASSETTE_DEBUG_SEARCH=<text> / CASSETTE_DEBUG_ARTIST=<id>: open
+        // those pages after start-up (snapshots without clicking).
+        var debug_search = Environment.get_variable ("CASSETTE_DEBUG_SEARCH");
+        var debug_artist = Environment.get_variable ("CASSETTE_DEBUG_ARTIST");
+        var debug_album = Environment.get_variable ("CASSETTE_DEBUG_ALBUM");
+        if (debug_search != null || debug_artist != null || debug_album != null) {
+            Timeout.add_seconds (8, () => {
+                if (debug_artist != null && current_view != null) {
+                    current_view.add_view (new ArtistView (debug_artist));
+                } else if (debug_album != null && current_view != null) {
+                    current_view.add_view (new AlbumView (debug_album));
+                } else if (debug_search != null) {
+                    run_search (debug_search);
+                }
+                return Source.REMOVE;
+            });
+        }
+
         resized.connect ((width, height) => {
             bool compact = width < PLAYER_BAR_COMPACT_WIDTH;
             bool tiny = width < PLAYER_BAR_TINY_WIDTH;
@@ -488,27 +558,6 @@ public class Cassette.Window : ApplicationWindow {
             new StationPickerDialog ().present (this);
         }
 
-        // CASSETTE_DEBUG_SHOT=<file.png>: render the window from inside GTK
-        // (screen capture needs permissions a terminal rarely has).
-        var shot = Environment.get_variable ("CASSETTE_DEBUG_SHOT");
-        if (shot != null) {
-            Timeout.add_seconds (9, () => {
-                try {
-                    var paintable = new Gtk.WidgetPaintable (this);
-                    var snapshot = new Gtk.Snapshot ();
-                    paintable.snapshot (snapshot, get_width (), get_height ());
-                    var node = snapshot.free_to_node ();
-                    if (node != null) {
-                        var texture = get_renderer ().render_texture (node, null);
-                        texture.save_to_png (shot);
-                        message ("debug shot saved to %s", shot);
-                    }
-                } catch (Error e) {
-                    warning ("debug shot: %s", e.message);
-                }
-                return Source.REMOVE;
-            });
-        }
     }
 
     // Local player bar or the station bar, depending on where playback goes.

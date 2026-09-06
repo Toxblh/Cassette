@@ -188,6 +188,36 @@ namespace Cassette.Client {
             return playlist_info;
         }
 
+        public ArtistBriefInfo? get_artist_info (string artist_id) throws BadStatusCodeError {
+            ArtistBriefInfo? info = null;
+
+            net_run (() => {
+                info = client.artists_brief_info (artist_id);
+            });
+
+            return info;
+        }
+
+        public Album? get_album_info (string album_id) throws BadStatusCodeError {
+            Album? album = null;
+
+            net_run (() => {
+                album = client.albums_with_tracks (album_id, true);
+            });
+
+            return album;
+        }
+
+        public SearchResult? search (string text) throws BadStatusCodeError {
+            SearchResult? result = null;
+
+            net_run (() => {
+                result = client.search (text);
+            });
+
+            return result;
+        }
+
         public Playlist? get_playlist_info (string playlist_uuid) throws BadStatusCodeError {
             Playlist? playlist_info = null;
 

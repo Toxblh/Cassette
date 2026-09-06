@@ -19,7 +19,7 @@
 using Gee;
 
 namespace Cassette.Client.YaMAPI {
-    public class Album : YaMObject, HasID {
+    public class Album : YaMObject, HasID, HasTrackList, HasCover {
 
         public string oid {
             owned get {
@@ -75,6 +75,31 @@ namespace Cassette.Client.YaMAPI {
                 return null;
             }
             return "https://" + cover_uri.replace ("%%", @"$(size)x$(size)");
+        }
+
+        /** All volumes in order, as one list. */
+        public ArrayList<Track> get_track_list () {
+            var track_list = new ArrayList<Track> ();
+            foreach (var volume in volumes) {
+                track_list.add_all (volume);
+            }
+            return track_list;
+        }
+
+        public ArrayList<Track> get_filtered_track_list (
+            bool show_explicit,
+            bool show_child,
+            string? exception_track_id = null
+        ) {
+            return filter_tracks (get_track_list (), show_explicit, show_child, exception_track_id);
+        }
+
+        public ArrayList<string> get_cover_items_by_size (int size) {
+            var cover_array = new ArrayList<string> ();
+            if (cover_uri != null && cover_uri != "") {
+                cover_array.add ("https://" + cover_uri.replace ("%%", @"$(size)x$(size)"));
+            }
+            return cover_array;
         }
     }
 }

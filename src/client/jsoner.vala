@@ -474,6 +474,14 @@ namespace Cassette.Client {
                         break;
 
                     case Json.NodeType.OBJECT:
+                        if (!prop_type.is_a (typeof (YaMObject))) {
+                            // e.g. Artist.description arrives as {text, uri} in
+                            // brief-info; the property is a plain string here.
+                            Logger.debug ("Skipping object for non-object property %s of %s".printf (
+                                property.name, obj_type.name ()
+                            ));
+                            break;
+                        }
                         yam_object.set_property (
                             property.name,
                             deserialize_object (prop_type, sub_node)

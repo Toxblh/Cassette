@@ -113,10 +113,9 @@ namespace Cassette.Client {
         } else if (yam_obj is YaMAPI.Album) {
             return "album";
 
-        } else if (yam_obj is YaMAPI.Artist) {
+        } else if (yam_obj is YaMAPI.Artist || yam_obj is YaMAPI.ArtistBriefInfo) {
             return "artist";
-
-        } else if (yam_obj is int) {
+        } else if (yam_obj is YaMAPI.SearchResult) {
             return "search";
 
         } else {
@@ -133,7 +132,11 @@ namespace Cassette.Client {
 
         } else if (yam_obj is YaMAPI.Artist) {
             return ((YaMAPI.Artist) yam_obj).name;
-
+        } else if (yam_obj is YaMAPI.ArtistBriefInfo) {
+            var artist = ((YaMAPI.ArtistBriefInfo) yam_obj).artist;
+            return artist != null ? artist.name : null;
+        } else if (yam_obj is YaMAPI.SearchResult) {
+            return ((YaMAPI.SearchResult) yam_obj).text;
         } else {
             return null;
         }

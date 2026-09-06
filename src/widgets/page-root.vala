@@ -33,6 +33,14 @@ public class Cassette.PageRoot : AbstractLoadablePage {
         }
     }
 
+    /** The page on top, when it is one of ours. */
+    public BaseView? visible_view {
+        get {
+            var page = nav_view.visible_page;
+            return page != null ? page.child as BaseView : null;
+        }
+    }
+
     public PageRoot (Window window, BaseView main_view) {
         Object (window: window, main_view: main_view, with_header_bar: false);
     }

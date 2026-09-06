@@ -117,6 +117,68 @@ public class Cassette.TrackInfoPanel : Adw.Bin, Gtk.Orientable {
 
     public int position { get; set; }
 
+    /** Emitted when an artist name is activated (see artists_activatable). */
+    public signal void artist_activated (YaMAPI.Artist artist);
+
+    Gtk.GestureClick? authors_click = null;
+
+    /**
+     * Makes the authors line a link to the artist page: one artist opens
+     * directly, several show a chooser.
+     */
+    public bool artists_activatable {
+        get {
+            return authors_click != null;
+        }
+        set {
+            if (value == (authors_click != null)) {
+                return;
+            }
+            if (value) {
+                authors_click = new Gtk.GestureClick ();
+                authors_click.released.connect (on_authors_clicked);
+                track_authors_label.add_controller (authors_click);
+                track_authors_label.cursor = new Gdk.Cursor.from_name ("pointer", null);
+                track_authors_label.add_css_class ("link-label");
+            } else {
+                track_authors_label.remove_controller (authors_click);
+                authors_click = null;
+                track_authors_label.cursor = null;
+                track_authors_label.remove_css_class ("link-label");
+            }
+        }
+    }
+
+    void on_authors_clicked () {
+        if (track_info == null || track_info.artists.size == 0) {
+            return;
+        }
+        if (track_info.artists.size == 1) {
+            artist_activated (track_info.artists[0]);
+            return;
+        }
+        var box = new Gtk.Box (Gtk.Orientation.VERTICAL, 2);
+        var popover = new Gtk.Popover () {
+            child = box
+        };
+        popover.set_parent (track_authors_label);
+        foreach (var artist in track_info.artists) {
+            var button = new Gtk.Button.with_label (artist.name ?? "") {
+                halign = Gtk.Align.FILL
+            };
+            button.add_css_class ("flat");
+            button.clicked.connect (() => {
+                popover.popdown ();
+                artist_activated (artist);
+            });
+            box.append (button);
+        }
+        popover.closed.connect (() => {
+            Idle.add_once (() => popover.unparent ());
+        });
+        popover.popup ();
+    }
+
     public bool load_cover { get; construct; default = true; }
 
     Gtk.Orientation _orientation = Gtk.Orientation.HORIZONTAL;

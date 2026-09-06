@@ -59,6 +59,10 @@ public class Cassette.TrackInfo : SidebarChildBin {
 
     construct {
         info_panel.track_info = track_info;
+        info_panel.artists_activatable = true;
+        info_panel.artist_activated.connect ((artist) => {
+            application.main_window.current_view.add_view (new ArtistView (artist.id));
+        });
         track_options_button.track_info = track_info;
 
         play_button.clicked.connect (play_mark_track.trigger);

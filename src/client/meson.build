@@ -8,6 +8,8 @@ cassette_client_sources = files(
   'api/objects/album/volume.vala',
   'api/objects/api-error.vala',
   'api/objects/artist/artist.vala',
+  'api/objects/artist/brief-info.vala',
+  'api/objects/search/search.vala',
   'api/objects/artist/counts.vala',
   'api/objects/artist/link.vala',
   'api/objects/artist/ratings.vala',

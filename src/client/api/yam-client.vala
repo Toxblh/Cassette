@@ -147,10 +147,21 @@ namespace Cassette.Client.YaMAPI {
         /**
          *
          */
-        public void albums_with_tracks (
+        public Album albums_with_tracks (
             string album_id,
-            bool rich_tracks
-        ) throws ClientError, BadStatusCodeError { }
+            bool rich_tracks = true
+        ) throws ClientError, BadStatusCodeError {
+            var bytes = soup_wrapper.get_sync (
+                @"$(YAM_BASE_URL)/albums/$album_id/with-tracks",
+                {"default"},
+                {
+                    {"richTracks", rich_tracks.to_string ()}
+                }
+            );
+            var jsoner = Jsoner.from_bytes (bytes, {"result"}, Case.CAMEL);
+
+            return (Album) jsoner.deserialize_object (typeof (Album));
+        }
 
         /**
          *
@@ -202,9 +213,43 @@ namespace Cassette.Client.YaMAPI {
         /**
          *
          */
-        public void artists_brief_info (
+        public ArtistBriefInfo artists_brief_info (
             string artist_id
-        ) throws ClientError, BadStatusCodeError { }
+        ) throws ClientError, BadStatusCodeError {
+            var bytes = soup_wrapper.get_sync (
+                @"$(YAM_BASE_URL)/artists/$artist_id/brief-info",
+                {"default"}
+            );
+            var jsoner = Jsoner.from_bytes (bytes, {"result"}, Case.CAMEL);
+
+            return (ArtistBriefInfo) jsoner.deserialize_object (typeof (ArtistBriefInfo));
+        }
+
+        /**
+         * Search over tracks, artists, albums and playlists.
+         *
+         * @param text  what to look for
+         * @param page  page number, from 0
+         */
+        public SearchResult search (
+            string text,
+            int page = 0,
+            string type = "all"
+        ) throws ClientError, BadStatusCodeError {
+            var bytes = soup_wrapper.get_sync (
+                @"$(YAM_BASE_URL)/search",
+                {"default"},
+                {
+                    {"text", text},
+                    {"type", type},
+                    {"page", page.to_string ()},
+                    {"nococrrect", "false"}
+                }
+            );
+            var jsoner = Jsoner.from_bytes (bytes, {"result"}, Case.CAMEL);
+
+            return (SearchResult) jsoner.deserialize_object (typeof (SearchResult));
+        }
 
         /**
          *
