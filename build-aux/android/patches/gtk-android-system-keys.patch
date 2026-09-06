@@ -1,0 +1,14 @@
+--- a/gdk/android/glue/java/org/gtk/android/ToplevelActivity.java
++++ b/gdk/android/glue/java/org/gtk/android/ToplevelActivity.java
+@@ -256,6 +256,11 @@
+ 				 */
+ 				if (event.getKeyCode() == KeyEvent.KEYCODE_BACK)
+ 					return false;
++				/* Volume, media, power, camera and the like are the system's:
++				 * returning true here would swallow them (no volume change while
++				 * the app is in front). Leave them to the default handling. */
++				if (event.isSystem())
++					return false;
+ 				GlibContext.runOnMain(() -> notifyKeyEvent(event));
+ 				return true;
+ 			}
