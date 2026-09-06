@@ -64,6 +64,13 @@ public final class SessionBridge {
 	static native void nativeVolume(int percent);
 
 	private static VolumeProvider remoteVolume = null;
+	/** Volume we last asked the station for, and when: key presses step from
+	 *  it in 5 % increments, and state reports close to it are ignored for a
+	 *  moment so the station's own rounding does not fight the keys. */
+	private static int pendingVolume = -1;
+	private static long pendingSince = 0;
+	private static final long PENDING_MS = 2500;
+	private static final int STEP = 5;
 
 	static MediaSession.Token token() {
 		return session == null ? null : session.getSessionToken();
@@ -179,18 +186,33 @@ public final class SessionBridge {
 			if (remoteVolume == null) {
 				remoteVolume = new VolumeProvider(VolumeProvider.VOLUME_CONTROL_ABSOLUTE, 100, percent) {
 					@Override public void onSetVolumeTo(int volume) {
-						setCurrentVolume(volume);
-						nativeVolume(volume);
+						send(Math.max(0, Math.min(100, volume)));
 					}
 					@Override public void onAdjustVolume(int direction) {
-						int v = Math.max(0, Math.min(100, getCurrentVolume() + direction * 5));
+						if (direction == 0) return;
+						long now = System.currentTimeMillis();
+						int base = (pendingVolume >= 0 && now - pendingSince < PENDING_MS)
+								? pendingVolume : getCurrentVolume();
+						// Snap to the 5 % grid the station uses, then step.
+						int snapped = Math.round(base / (float) STEP) * STEP;
+						send(Math.max(0, Math.min(100, snapped + (direction > 0 ? STEP : -STEP))));
+					}
+					private void send(int v) {
+						pendingVolume = v;
+						pendingSince = System.currentTimeMillis();
 						setCurrentVolume(v);
 						nativeVolume(v);
 					}
 				};
 				session.setPlaybackToRemote(remoteVolume);
 			} else if (remoteVolume.getCurrentVolume() != percent) {
-				remoteVolume.setCurrentVolume(percent);
+				boolean stale = pendingVolume >= 0
+						&& System.currentTimeMillis() - pendingSince < PENDING_MS
+						&& Math.abs(percent - pendingVolume) <= STEP;
+				if (!stale) {
+					pendingVolume = -1;
+					remoteVolume.setCurrentVolume(percent);
+				}
 			}
 		});
 	}
