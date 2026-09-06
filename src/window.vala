@@ -137,6 +137,20 @@ public class Cassette.Window : ApplicationWindow {
 #endif
 
     /**
+     * Opens the artist page on the current page root. On a phone the
+     * sidebar covers the content, so it closes to reveal the page.
+     */
+    public void open_artist (string artist_id) {
+        if (current_view == null) {
+            return;
+        }
+        current_view.add_view (new ArtistView (artist_id));
+        if (sidebar.collapsed) {
+            sidebar.close ();
+        }
+    }
+
+    /**
      * Search: the entry under the header bar pushes a SearchView on the
      * current page root, or re-queries the one already on top.
      */
