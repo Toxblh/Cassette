@@ -1,0 +1,2857 @@
+From 3e8bfb5fa563ee032b724ebb40928cefdd8a45b6 Mon Sep 17 00:00:00 2001
+From: Anton Palgunov <toxblh@gmail.com>
+Date: Wed, 9 Sep 2026 02:26:44 +0300
+Subject: [PATCH] gdk: add an iOS backend (UIKit, cairo only)
+
+A minimal GDK backend for iOS: UIKit owns the main thread, GTK runs
+on its own thread and hops to the main queue for UIKit work. Each
+GdkSurface is a UIView; toplevels fill the root view, popups are
+subviews positioned by the popup layout helper. Drawing goes through
+a cairo image buffer that becomes the layer's CGImage each frame.
+Touches become GDK touch events (the first finger emulates the
+pointer); a GDK grab redirects hit testing to the grabbed view so
+autohide popups close on outside taps. No GL, no clipboard, no
+on-screen keyboard yet.
+
+The macOS-only pieces (SDK version check, quartz color picker) are
+now gated on the macOS backend instead of __APPLE__.
+---
+ gdk/gdkconfig.h.meson                |   1 +
+ gdk/gdkdisplaymanager.c              |   7 +
+ gdk/ios/gdkios.h                     |  14 +
+ gdk/ios/gdkioscairocontext-private.h |  16 ++
+ gdk/ios/gdkioscairocontext.c         | 179 ++++++++++++
+ gdk/ios/gdkiosdisplay-private.h      |  34 +++
+ gdk/ios/gdkiosdisplay.c              | 227 +++++++++++++++
+ gdk/ios/gdkiosdisplay.h              |  17 ++
+ gdk/ios/gdkiosevents-private.h       |  16 ++
+ gdk/ios/gdkiosevents.c               | 140 ++++++++++
+ gdk/ios/gdkiosmonitor-private.h      |  22 ++
+ gdk/ios/gdkiosmonitor.c              |  34 +++
+ gdk/ios/gdkiosmonitor.h              |  17 ++
+ gdk/ios/gdkiospopup-private.h        |  23 ++
+ gdk/ios/gdkiospopup.c                | 181 ++++++++++++
+ gdk/ios/gdkiospopup.h                |  17 ++
+ gdk/ios/gdkiosruntime-private.h      |  31 +++
+ gdk/ios/gdkiosruntime.c              | 251 +++++++++++++++++
+ gdk/ios/gdkiosruntime.h              |  23 ++
+ gdk/ios/gdkiosseat-private.h         |  72 +++++
+ gdk/ios/gdkiosseat.c                 | 357 ++++++++++++++++++++++++
+ gdk/ios/gdkiosseat.h                 |  27 ++
+ gdk/ios/gdkiossurface-private.h      |  63 +++++
+ gdk/ios/gdkiossurface.c              | 396 +++++++++++++++++++++++++++
+ gdk/ios/gdkiossurface.h              |  19 ++
+ gdk/ios/gdkiostoplevel-private.h     |  23 ++
+ gdk/ios/gdkiostoplevel.c             | 231 ++++++++++++++++
+ gdk/ios/gdkiostoplevel.h             |  17 ++
+ gdk/ios/meson.build                  |  37 +++
+ gdk/meson.build                      |   3 +-
+ gtk/gtkcolorpicker.c                 |   4 +-
+ meson.build                          |   7 +-
+ meson.options                        |   5 +
+ 33 files changed, 2507 insertions(+), 4 deletions(-)
+ create mode 100644 gdk/ios/gdkios.h
+ create mode 100644 gdk/ios/gdkioscairocontext-private.h
+ create mode 100644 gdk/ios/gdkioscairocontext.c
+ create mode 100644 gdk/ios/gdkiosdisplay-private.h
+ create mode 100644 gdk/ios/gdkiosdisplay.c
+ create mode 100644 gdk/ios/gdkiosdisplay.h
+ create mode 100644 gdk/ios/gdkiosevents-private.h
+ create mode 100644 gdk/ios/gdkiosevents.c
+ create mode 100644 gdk/ios/gdkiosmonitor-private.h
+ create mode 100644 gdk/ios/gdkiosmonitor.c
+ create mode 100644 gdk/ios/gdkiosmonitor.h
+ create mode 100644 gdk/ios/gdkiospopup-private.h
+ create mode 100644 gdk/ios/gdkiospopup.c
+ create mode 100644 gdk/ios/gdkiospopup.h
+ create mode 100644 gdk/ios/gdkiosruntime-private.h
+ create mode 100644 gdk/ios/gdkiosruntime.c
+ create mode 100644 gdk/ios/gdkiosruntime.h
+ create mode 100644 gdk/ios/gdkiosseat-private.h
+ create mode 100644 gdk/ios/gdkiosseat.c
+ create mode 100644 gdk/ios/gdkiosseat.h
+ create mode 100644 gdk/ios/gdkiossurface-private.h
+ create mode 100644 gdk/ios/gdkiossurface.c
+ create mode 100644 gdk/ios/gdkiossurface.h
+ create mode 100644 gdk/ios/gdkiostoplevel-private.h
+ create mode 100644 gdk/ios/gdkiostoplevel.c
+ create mode 100644 gdk/ios/gdkiostoplevel.h
+ create mode 100644 gdk/ios/meson.build
+
+diff --git a/gdk/gdkconfig.h.meson b/gdk/gdkconfig.h.meson
+index 17276e0..4b73ce2 100644
+--- a/gdk/gdkconfig.h.meson
++++ b/gdk/gdkconfig.h.meson
+@@ -14,6 +14,7 @@ G_BEGIN_DECLS
+ #mesondefine GDK_WINDOWING_ANDROID
+ #mesondefine GDK_WINDOWING_BROADWAY
+ #mesondefine GDK_WINDOWING_MACOS
++#mesondefine GDK_WINDOWING_IOS
+ #mesondefine GDK_WINDOWING_WAYLAND
+ #mesondefine GDK_WINDOWING_WIN32
+ 
+diff --git a/gdk/gdkdisplaymanager.c b/gdk/gdkdisplaymanager.c
+index a20c097..78aa66d 100644
+--- a/gdk/gdkdisplaymanager.c
++++ b/gdk/gdkdisplaymanager.c
+@@ -48,6 +48,10 @@
+ #include "macos/gdkmacosdisplay-private.h"
+ #endif
+ 
++#ifdef GDK_WINDOWING_IOS
++#include "ios/gdkiosdisplay-private.h"
++#endif
++
+ #ifdef GDK_WINDOWING_WIN32
+ #include "win32/gdkwin32.h"
+ #include "win32/gdkprivate-win32.h"
+@@ -272,6 +276,9 @@ static GdkBackend gdk_backends[] = {
+ #ifdef GDK_WINDOWING_MACOS
+   { "macos",   _gdk_macos_display_open },
+ #endif
++#ifdef GDK_WINDOWING_IOS
++  { "ios",     _gdk_ios_display_open },
++#endif
+ #ifdef GDK_WINDOWING_WIN32
+   { "win32",    _gdk_win32_display_open },
+ #endif
+diff --git a/gdk/ios/gdkios.h b/gdk/ios/gdkios.h
+new file mode 100644
+index 0000000..5162a29
+--- /dev/null
++++ b/gdk/ios/gdkios.h
+@@ -0,0 +1,14 @@
++/* GDK iOS backend: public umbrella header. */
++#pragma once
++
++#define __GDKIOS_H_INSIDE__
++
++#include <gdk/ios/gdkiosdisplay.h>
++#include <gdk/ios/gdkiosmonitor.h>
++#include <gdk/ios/gdkiosseat.h>
++#include <gdk/ios/gdkiossurface.h>
++#include <gdk/ios/gdkiostoplevel.h>
++#include <gdk/ios/gdkiospopup.h>
++#include <gdk/ios/gdkiosruntime.h>
++
++#undef __GDKIOS_H_INSIDE__
+diff --git a/gdk/ios/gdkioscairocontext-private.h b/gdk/ios/gdkioscairocontext-private.h
+new file mode 100644
+index 0000000..88be261
+--- /dev/null
++++ b/gdk/ios/gdkioscairocontext-private.h
+@@ -0,0 +1,16 @@
++#pragma once
++
++#include "gdkcairocontextprivate.h"
++
++G_BEGIN_DECLS
++
++#define GDK_TYPE_IOS_CAIRO_CONTEXT (gdk_ios_cairo_context_get_type ())
++#define GDK_IOS_CAIRO_CONTEXT(o) (G_TYPE_CHECK_INSTANCE_CAST ((o), GDK_TYPE_IOS_CAIRO_CONTEXT, GdkIosCairoContext))
++#define GDK_IS_IOS_CAIRO_CONTEXT(o) (G_TYPE_CHECK_INSTANCE_TYPE ((o), GDK_TYPE_IOS_CAIRO_CONTEXT))
++
++typedef struct _GdkIosCairoContext GdkIosCairoContext;
++typedef struct _GdkIosCairoContextClass GdkIosCairoContextClass;
++
++GType gdk_ios_cairo_context_get_type (void);
++
++G_END_DECLS
+diff --git a/gdk/ios/gdkioscairocontext.c b/gdk/ios/gdkioscairocontext.c
+new file mode 100644
+index 0000000..c60b5e3
+--- /dev/null
++++ b/gdk/ios/gdkioscairocontext.c
+@@ -0,0 +1,179 @@
++/*
++ * GDK iOS backend: cairo drawing into a CALayer.
++ *
++ * GTK paints into a persistent cairo image surface on the GTK thread;
++ * after each frame a copy of it becomes a CGImage that is handed to the
++ * view's layer on the main thread.
++ *
++ * SPDX-License-Identifier: LGPL-2.1-or-later
++ */
++
++#include "config.h"
++
++#import <UIKit/UIKit.h>
++#import <QuartzCore/QuartzCore.h>
++
++#include <math.h>
++#include <string.h>
++#include <cairo.h>
++
++#include "gdkiosruntime-private.h"
++#include "gdkiossurface-private.h"
++
++#include "gdkioscairocontext-private.h"
++
++struct _GdkIosCairoContext
++{
++  GdkCairoContext parent_instance;
++
++  cairo_surface_t *backing;
++  int backing_width;
++  int backing_height;
++  gboolean in_frame;
++};
++
++struct _GdkIosCairoContextClass
++{
++  GdkCairoContextClass parent_class;
++};
++
++G_DEFINE_TYPE (GdkIosCairoContext, gdk_ios_cairo_context, GDK_TYPE_CAIRO_CONTEXT)
++
++static cairo_t *
++gdk_ios_cairo_context_cairo_create (GdkCairoContext *cairo_context)
++{
++  GdkIosCairoContext *self = GDK_IOS_CAIRO_CONTEXT (cairo_context);
++  return self->backing != NULL ? cairo_create (self->backing) : NULL;
++}
++
++static void
++gdk_ios_cairo_context_begin_frame (GdkDrawContext *draw_context,
++                                   gpointer        context_data,
++                                   cairo_region_t *region,
++                                   GdkColorState **out_color_state,
++                                   GdkMemoryDepth *out_depth)
++{
++  GdkIosCairoContext *self = (GdkIosCairoContext *) draw_context;
++  GdkSurface *surface = gdk_draw_context_get_surface (draw_context);
++  GdkIosSurface *impl = (GdkIosSurface *) surface;
++
++  double scale = impl->cfg.scale > 0 ? impl->cfg.scale : 1.0;
++  int width = (int) ceil (surface->width * scale);
++  int height = (int) ceil (surface->height * scale);
++
++  if (self->backing == NULL || self->backing_width != width || self->backing_height != height)
++    {
++      g_clear_pointer (&self->backing, cairo_surface_destroy);
++      /* No device scale here: GdkCairoContext applies cairo_scale() itself
++       * and expects the region and the buffer in device pixels. */
++      self->backing = cairo_image_surface_create (CAIRO_FORMAT_ARGB32, MAX (width, 1), MAX (height, 1));
++      self->backing_width = width;
++      self->backing_height = height;
++
++      cairo_rectangle_int_t all = { 0, 0, width, height };
++      cairo_region_union_rectangle (region, &all);
++    }
++
++  self->in_frame = TRUE;
++  *out_color_state = GDK_COLOR_STATE_SRGB;
++  *out_depth = gdk_color_state_get_depth (GDK_COLOR_STATE_SRGB);
++}
++
++static void
++gdk_ios_cairo_context_release_data (void *info, const void *data, size_t size)
++{
++  g_free ((gpointer) data);
++}
++
++static void
++gdk_ios_cairo_context_end_frame (GdkDrawContext *draw_context,
++                                 gpointer        context_data,
++                                 cairo_region_t *painted)
++{
++  GdkIosCairoContext *self = (GdkIosCairoContext *) draw_context;
++  GdkSurface *surface = gdk_draw_context_get_surface (draw_context);
++  GdkIosSurface *impl = (GdkIosSurface *) surface;
++
++  self->in_frame = FALSE;
++  if (self->backing == NULL || impl->view == NULL)
++    return;
++
++  cairo_surface_flush (self->backing);
++
++  cairo_rectangle_int_t extents;
++  cairo_region_get_extents (painted, &extents);
++  g_debug ("iOS cairo: frame for %p painted %dx%d at (%d|%d)", impl,
++           extents.width, extents.height, extents.x, extents.y);
++
++  int width = cairo_image_surface_get_width (self->backing);
++  int height = cairo_image_surface_get_height (self->backing);
++  int stride = cairo_image_surface_get_stride (self->backing);
++  size_t size = (size_t) stride * height;
++
++  guchar *copy = g_malloc (size);
++  memcpy (copy, cairo_image_surface_get_data (self->backing), size);
++
++  CGDataProviderRef provider = CGDataProviderCreateWithData (NULL, copy, size, gdk_ios_cairo_context_release_data);
++  CGColorSpaceRef colorspace = CGColorSpaceCreateDeviceRGB ();
++  /* cairo ARGB32 is premultiplied BGRA in memory on little-endian */
++  CGImageRef image = CGImageCreate (width, height, 8, 32, stride, colorspace,
++                                    kCGBitmapByteOrder32Little | kCGImageAlphaPremultipliedFirst,
++                                    provider, NULL, false, kCGRenderingIntentDefault);
++  CGColorSpaceRelease (colorspace);
++  CGDataProviderRelease (provider);
++
++  UIView *view = [(UIView *) impl->view retain];
++  double scale = impl->cfg.scale;
++  gdk_ios_run_on_main_async (^{
++    [CATransaction begin];
++    [CATransaction setDisableActions:YES];
++    view.layer.contentsScale = scale;
++    view.layer.contents = (id) image;
++    [CATransaction commit];
++    CGImageRelease (image);
++    [view release];
++  });
++}
++
++static void
++gdk_ios_cairo_context_empty_frame (GdkDrawContext *draw_context)
++{
++}
++
++static void
++gdk_ios_cairo_context_surface_resized (GdkDrawContext *draw_context)
++{
++  GdkIosCairoContext *self = (GdkIosCairoContext *) draw_context;
++  if (!self->in_frame)
++    g_clear_pointer (&self->backing, cairo_surface_destroy);
++}
++
++static void
++gdk_ios_cairo_context_dispose (GObject *object)
++{
++  GdkIosCairoContext *self = (GdkIosCairoContext *) object;
++  g_clear_pointer (&self->backing, cairo_surface_destroy);
++  G_OBJECT_CLASS (gdk_ios_cairo_context_parent_class)->dispose (object);
++}
++
++static void
++gdk_ios_cairo_context_class_init (GdkIosCairoContextClass *klass)
++{
++  GObjectClass *object_class = G_OBJECT_CLASS (klass);
++  GdkDrawContextClass *draw_context_class = GDK_DRAW_CONTEXT_CLASS (klass);
++  GdkCairoContextClass *cairo_context_class = GDK_CAIRO_CONTEXT_CLASS (klass);
++
++  object_class->dispose = gdk_ios_cairo_context_dispose;
++
++  draw_context_class->begin_frame = gdk_ios_cairo_context_begin_frame;
++  draw_context_class->end_frame = gdk_ios_cairo_context_end_frame;
++  draw_context_class->empty_frame = gdk_ios_cairo_context_empty_frame;
++  draw_context_class->surface_resized = gdk_ios_cairo_context_surface_resized;
++
++  cairo_context_class->cairo_create = gdk_ios_cairo_context_cairo_create;
++}
++
++static void
++gdk_ios_cairo_context_init (GdkIosCairoContext *self)
++{
++}
+diff --git a/gdk/ios/gdkiosdisplay-private.h b/gdk/ios/gdkiosdisplay-private.h
+new file mode 100644
+index 0000000..085eabc
+--- /dev/null
++++ b/gdk/ios/gdkiosdisplay-private.h
+@@ -0,0 +1,34 @@
++#pragma once
++
++#include "gdkdisplayprivate.h"
++
++#include "gdkiosdisplay.h"
++#include "gdkiosseat-private.h"
++
++G_BEGIN_DECLS
++
++struct _GdkIosDisplay
++{
++  GdkDisplay parent_instance;
++
++  GListStore *monitors;
++  GdkMonitor *monitor;
++  GdkIosSeat *seat;
++  GdkKeymap *keymap;
++
++  gboolean dark;
++  double scale;
++};
++
++struct _GdkIosDisplayClass
++{
++  GdkDisplayClass parent_class;
++};
++
++GdkDisplay *_gdk_ios_display_open (const char *display_name);
++GdkIosDisplay *gdk_ios_display_get_instance (void);
++
++/* Called on the GTK thread when the UI trait collection changed. */
++void gdk_ios_display_set_dark (GdkIosDisplay *self, gboolean dark);
++
++G_END_DECLS
+diff --git a/gdk/ios/gdkiosdisplay.c b/gdk/ios/gdkiosdisplay.c
+new file mode 100644
+index 0000000..1b7e0b7
+--- /dev/null
++++ b/gdk/ios/gdkiosdisplay.c
+@@ -0,0 +1,227 @@
++/* GDK iOS backend: GdkDisplay. SPDX-License-Identifier: LGPL-2.1-or-later */
++
++#include "config.h"
++
++#import <UIKit/UIKit.h>
++
++#include "gdkdisplayprivate.h"
++#include "gdkclipboardprivate.h"
++#include "gdkglcontextprivate.h"
++
++#include "gdkiosruntime-private.h"
++#include "gdkiosmonitor-private.h"
++#include "gdkiossurface-private.h"
++#include "gdkiostoplevel-private.h"
++#include "gdkiospopup-private.h"
++#include "gdkioscairocontext-private.h"
++#include "gdkiosseat-private.h"
++
++#include "gdkiosdisplay-private.h"
++
++#include "gtk/gtkenums.h"
++
++G_DEFINE_TYPE (GdkIosDisplay, gdk_ios_display, GDK_TYPE_DISPLAY)
++
++static GdkIosDisplay *gdk_ios_display_instance = NULL;
++
++static void
++gdk_ios_display_finalize (GObject *object)
++{
++  GdkIosDisplay *self = (GdkIosDisplay *) object;
++  GdkDisplay *display = (GdkDisplay *) self;
++
++  g_clear_object (&display->clipboard);
++  g_clear_object (&self->monitors);
++  g_clear_object (&self->monitor);
++  g_clear_object (&self->seat);
++  g_clear_object (&self->keymap);
++
++  G_OBJECT_CLASS (gdk_ios_display_parent_class)->finalize (object);
++}
++
++static const char *
++gdk_ios_display_get_name (GdkDisplay *display)
++{
++  return "IosDisplay";
++}
++
++static void
++gdk_ios_display_nop (GdkDisplay *display)
++{
++}
++
++static GdkGLContext *
++gdk_ios_display_init_gl (GdkDisplay *display, GError **error)
++{
++  g_set_error_literal (error, GDK_GL_ERROR, GDK_GL_ERROR_NOT_AVAILABLE,
++                       "OpenGL is not available in the iOS backend yet");
++  return NULL;
++}
++
++static gulong
++gdk_ios_display_get_next_serial (GdkDisplay *display)
++{
++  return 0;
++}
++
++static void
++gdk_ios_display_notify_startup_complete (GdkDisplay *display, const char *startup_id)
++{
++}
++
++static GdkKeymap *
++gdk_ios_display_get_keymap (GdkDisplay *display)
++{
++  return ((GdkIosDisplay *) display)->keymap;
++}
++
++static GdkSeat *
++gdk_ios_display_get_default_seat (GdkDisplay *display)
++{
++  return (GdkSeat *) ((GdkIosDisplay *) display)->seat;
++}
++
++static GListModel *
++gdk_ios_display_get_monitors (GdkDisplay *display)
++{
++  return G_LIST_MODEL (((GdkIosDisplay *) display)->monitors);
++}
++
++static GdkMonitor *
++gdk_ios_display_get_monitor_at_surface (GdkDisplay *display, GdkSurface *surface)
++{
++  return ((GdkIosDisplay *) display)->monitor;
++}
++
++static gboolean
++gdk_ios_display_get_setting (GdkDisplay *display, const char *name, GValue *value)
++{
++  GdkIosDisplay *self = (GdkIosDisplay *) display;
++
++  if (g_strcmp0 (name, "gtk-application-prefer-dark-theme") == 0)
++    {
++      g_value_set_boolean (value, self->dark);
++      return TRUE;
++    }
++  else if (g_strcmp0 (name, "gtk-interface-color-scheme") == 0)
++    {
++      g_value_set_enum (value, self->dark ? GTK_INTERFACE_COLOR_SCHEME_DARK : GTK_INTERFACE_COLOR_SCHEME_LIGHT);
++      return TRUE;
++    }
++  else if (g_strcmp0 (name, "gtk-decoration-layout") == 0)
++    {
++      g_value_set_static_string (value, ":");
++      return TRUE;
++    }
++  else if (g_strcmp0 (name, "gtk-shell-shows-app-menu") == 0 ||
++           g_strcmp0 (name, "gtk-shell-shows-menubar") == 0)
++    {
++      g_value_set_boolean (value, FALSE);
++      return TRUE;
++    }
++  return FALSE;
++}
++
++static void
++gdk_ios_display_class_init (GdkIosDisplayClass *klass)
++{
++  GObjectClass *object_class = G_OBJECT_CLASS (klass);
++  GdkDisplayClass *display_class = GDK_DISPLAY_CLASS (klass);
++
++  object_class->finalize = gdk_ios_display_finalize;
++
++  display_class->toplevel_type = GDK_TYPE_IOS_TOPLEVEL;
++  display_class->popup_type = GDK_TYPE_IOS_POPUP;
++  display_class->cairo_context_type = GDK_TYPE_IOS_CAIRO_CONTEXT;
++  display_class->vk_context_type = G_TYPE_NONE;
++  display_class->vk_extension_name = NULL;
++
++  display_class->get_name = gdk_ios_display_get_name;
++  display_class->beep = gdk_ios_display_nop;
++  display_class->sync = gdk_ios_display_nop;
++  display_class->flush = gdk_ios_display_nop;
++  display_class->queue_events = gdk_ios_display_nop;
++  display_class->init_gl = gdk_ios_display_init_gl;
++  display_class->get_next_serial = gdk_ios_display_get_next_serial;
++  display_class->notify_startup_complete = gdk_ios_display_notify_startup_complete;
++  display_class->get_keymap = gdk_ios_display_get_keymap;
++  display_class->get_default_seat = gdk_ios_display_get_default_seat;
++  display_class->get_monitors = gdk_ios_display_get_monitors;
++  display_class->get_monitor_at_surface = gdk_ios_display_get_monitor_at_surface;
++  display_class->get_setting = gdk_ios_display_get_setting;
++}
++
++static void
++gdk_ios_display_init (GdkIosDisplay *self)
++{
++  GdkDisplay *display = (GdkDisplay *) self;
++
++  display->clipboard = gdk_clipboard_new (display);
++
++  self->monitors = g_list_store_new (GDK_TYPE_IOS_MONITOR);
++  self->seat = gdk_ios_seat_new (display);
++  gdk_display_add_seat (display, (GdkSeat *) self->seat);
++  self->keymap = g_object_new (GDK_TYPE_IOS_KEYMAP, NULL);
++
++  gdk_display_set_composited (display, TRUE);
++  gdk_display_set_input_shapes (display, TRUE);
++  gdk_display_set_rgba (display, TRUE);
++  gdk_display_set_shadow_width (display, FALSE);
++}
++
++GdkDisplay *
++_gdk_ios_display_open (const char *display_name)
++{
++  if (gdk_ios_display_instance != NULL)
++    return NULL;
++
++  if (!gdk_ios_runtime_is_ready ())
++    {
++      g_warning ("Cannot open the iOS display before UIKit has launched; use gdk_ios_main()");
++      return NULL;
++    }
++
++  GdkIosDisplay *self = g_object_new (GDK_TYPE_IOS_DISPLAY, NULL);
++  gdk_ios_display_instance = self;
++  g_object_add_weak_pointer (G_OBJECT (self), (gpointer *) &gdk_ios_display_instance);
++
++  __block GdkRectangle bounds;
++  __block double scale = 1;
++  __block int refresh = 60000;
++  __block gboolean dark = FALSE;
++  gdk_ios_run_on_main_sync (^{
++    UIScreen *screen = [UIScreen mainScreen];
++    CGRect b = screen.bounds;
++    bounds = (GdkRectangle){ (int) b.origin.x, (int) b.origin.y, (int) ceil (b.size.width), (int) ceil (b.size.height) };
++    scale = screen.scale;
++    refresh = (int) screen.maximumFramesPerSecond * 1000;
++    dark = gdk_ios_runtime_get_root_view ().traitCollection.userInterfaceStyle == UIUserInterfaceStyleDark;
++  });
++  self->scale = scale;
++  self->dark = dark;
++  self->monitor = gdk_ios_monitor_new ((GdkDisplay *) self);
++  gdk_ios_monitor_update ((GdkIosMonitor *) self->monitor, &bounds, scale, refresh);
++  g_list_store_append (self->monitors, self->monitor);
++
++  g_debug ("iOS display: %dx%d points, scale %.1f, %d mHz, dark %d",
++           bounds.width, bounds.height, scale, refresh, dark);
++
++  gdk_display_emit_opened (GDK_DISPLAY (self));
++  return GDK_DISPLAY (self);
++}
++
++GdkIosDisplay *
++gdk_ios_display_get_instance (void)
++{
++  return gdk_ios_display_instance;
++}
++
++void
++gdk_ios_display_set_dark (GdkIosDisplay *self, gboolean dark)
++{
++  if (self->dark == dark)
++    return;
++  self->dark = dark;
++  gdk_display_setting_changed ((GdkDisplay *) self, "gtk-application-prefer-dark-theme");
++  gdk_display_setting_changed ((GdkDisplay *) self, "gtk-interface-color-scheme");
++}
+diff --git a/gdk/ios/gdkiosdisplay.h b/gdk/ios/gdkiosdisplay.h
+new file mode 100644
+index 0000000..e57bc08
+--- /dev/null
++++ b/gdk/ios/gdkiosdisplay.h
+@@ -0,0 +1,17 @@
++#pragma once
++
++#include <gdk/gdk.h>
++
++G_BEGIN_DECLS
++
++#define GDK_TYPE_IOS_DISPLAY (gdk_ios_display_get_type ())
++#define GDK_IOS_DISPLAY(o) (G_TYPE_CHECK_INSTANCE_CAST ((o), GDK_TYPE_IOS_DISPLAY, GdkIosDisplay))
++#define GDK_IS_IOS_DISPLAY(o) (G_TYPE_CHECK_INSTANCE_TYPE ((o), GDK_TYPE_IOS_DISPLAY))
++
++typedef struct _GdkIosDisplay GdkIosDisplay;
++typedef struct _GdkIosDisplayClass GdkIosDisplayClass;
++
++GDK_AVAILABLE_IN_ALL
++GType gdk_ios_display_get_type (void);
++
++G_END_DECLS
+diff --git a/gdk/ios/gdkiosevents-private.h b/gdk/ios/gdkiosevents-private.h
+new file mode 100644
+index 0000000..9a8a30d
+--- /dev/null
++++ b/gdk/ios/gdkiosevents-private.h
+@@ -0,0 +1,16 @@
++#pragma once
++
++#include <gdk/gdk.h>
++
++#include "gdkiossurface-private.h"
++
++G_BEGIN_DECLS
++
++/* Main thread: queue a touch for the GTK thread. Coordinates in points, relative to the surface. */
++void gdk_ios_events_post_touch (GdkIosSurface *surface, GdkEventType type, guint sequence,
++                                double x, double y, guint32 time);
++
++/* Main thread: queue a key press+release pair for a unicode character (on-screen keyboard). */
++void gdk_ios_events_post_text (GdkIosSurface *surface, gunichar ch, guint keyval);
++
++G_END_DECLS
+diff --git a/gdk/ios/gdkiosevents.c b/gdk/ios/gdkiosevents.c
+new file mode 100644
+index 0000000..01bd8ba
+--- /dev/null
++++ b/gdk/ios/gdkiosevents.c
+@@ -0,0 +1,140 @@
++/* GDK iOS backend: UIKit input → GDK events. SPDX-License-Identifier: LGPL-2.1-or-later */
++
++#include "config.h"
++
++#include "gdkeventsprivate.h"
++#include "gdkkeysyms.h"
++
++#include "gdkiosruntime-private.h"
++#include "gdkiosdisplay-private.h"
++#include "gdkiosseat-private.h"
++#include "gdkiostoplevel-private.h"
++
++#include "gdkiosevents-private.h"
++
++typedef struct
++{
++  GdkIosSurface *surface;
++  GdkEventType type;
++  guint sequence;
++  double x;
++  double y;
++  guint32 time;
++} GdkIosTouch;
++
++static void
++gdk_ios_events_handle_touch (GdkIosTouch *touch)
++{
++  GdkIosSurface *surface = touch->surface;
++  GdkSurface *gdk_surface = (GdkSurface *) surface;
++  if (GDK_SURFACE_DESTROYED (gdk_surface) || !gdk_surface->is_mapped)
++    return;
++
++  GdkIosDisplay *display = (GdkIosDisplay *) gdk_surface_get_display (gdk_surface);
++  GdkIosSeat *seat = display->seat;
++
++  /* Keyboard focus follows touches, for toplevels and grabbing popups. */
++  if (GDK_IS_IOS_TOPLEVEL (surface) || gdk_surface->autohide)
++    gdk_ios_device_keyboard_maybe_update_surface_focus ((GdkIosDevice *) seat->logical_keyboard, surface);
++
++  if (touch->type == GDK_TOUCH_BEGIN)
++    gdk_ios_device_maybe_update_surface ((GdkIosDevice *) seat->logical_pointer, surface,
++                                         0, touch->time, touch->x, touch->y);
++
++  gboolean emulating = FALSE;
++  if (touch->type == GDK_TOUCH_BEGIN && !surface->has_emulating)
++    {
++      surface->has_emulating = TRUE;
++      surface->emulating_sequence = touch->sequence;
++    }
++  if (surface->has_emulating && surface->emulating_sequence == touch->sequence)
++    {
++      emulating = TRUE;
++      if (touch->type == GDK_TOUCH_END || touch->type == GDK_TOUCH_CANCEL)
++        surface->has_emulating = FALSE;
++    }
++
++  double *axes = g_new0 (double, GDK_AXIS_LAST);
++  axes[GDK_AXIS_X] = touch->x;
++  axes[GDK_AXIS_Y] = touch->y;
++
++  GdkEvent *ev = gdk_touch_event_new (touch->type, GUINT_TO_POINTER (touch->sequence),
++                                      gdk_surface, seat->logical_touchscreen,
++                                      touch->time, 0, touch->x, touch->y, axes, emulating);
++  gdk_ios_seat_consume_event ((GdkDisplay *) display, ev);
++}
++
++static gboolean
++gdk_ios_events_touch_idle (gpointer data)
++{
++  gdk_ios_events_handle_touch ((GdkIosTouch *) data);
++  return G_SOURCE_REMOVE;
++}
++
++static void
++gdk_ios_events_touch_free (gpointer data)
++{
++  GdkIosTouch *touch = data;
++  g_object_unref (touch->surface);
++  g_free (touch);
++}
++
++void
++gdk_ios_events_post_touch (GdkIosSurface *surface, GdkEventType type, guint sequence,
++                           double x, double y, guint32 time)
++{
++  GdkIosTouch *touch = g_new0 (GdkIosTouch, 1);
++  touch->surface = g_object_ref (surface);
++  touch->type = type;
++  touch->sequence = sequence;
++  touch->x = x;
++  touch->y = y;
++  touch->time = time;
++  gdk_ios_post_to_gtk (gdk_ios_events_touch_idle, touch, gdk_ios_events_touch_free);
++}
++
++typedef struct
++{
++  GdkIosSurface *surface;
++  guint keyval;
++} GdkIosKey;
++
++static gboolean
++gdk_ios_events_key_idle (gpointer data)
++{
++  GdkIosKey *key = data;
++  GdkSurface *gdk_surface = (GdkSurface *) key->surface;
++  if (GDK_SURFACE_DESTROYED (gdk_surface))
++    return G_SOURCE_REMOVE;
++
++  GdkIosDisplay *display = (GdkIosDisplay *) gdk_surface_get_display (gdk_surface);
++  GdkDevice *keyboard = display->seat->logical_keyboard;
++  gdk_ios_device_keyboard_maybe_update_surface_focus ((GdkIosDevice *) keyboard, key->surface);
++
++  guint32 time = (guint32) (g_get_monotonic_time () / 1000);
++  GdkTranslatedKey translated = { .keyval = key->keyval, .consumed = 0, .layout = 0, .level = 0 };
++  GdkEvent *press = gdk_key_event_new (GDK_KEY_PRESS, gdk_surface, keyboard, time, key->keyval,
++                                       0, FALSE, &translated, &translated, NULL);
++  gdk_ios_seat_consume_event ((GdkDisplay *) display, press);
++  GdkEvent *release = gdk_key_event_new (GDK_KEY_RELEASE, gdk_surface, keyboard, time, key->keyval,
++                                         0, FALSE, &translated, &translated, NULL);
++  gdk_ios_seat_consume_event ((GdkDisplay *) display, release);
++  return G_SOURCE_REMOVE;
++}
++
++static void
++gdk_ios_events_key_free (gpointer data)
++{
++  GdkIosKey *key = data;
++  g_object_unref (key->surface);
++  g_free (key);
++}
++
++void
++gdk_ios_events_post_text (GdkIosSurface *surface, gunichar ch, guint keyval)
++{
++  GdkIosKey *key = g_new0 (GdkIosKey, 1);
++  key->surface = g_object_ref (surface);
++  key->keyval = keyval != 0 ? keyval : gdk_unicode_to_keyval (ch);
++  gdk_ios_post_to_gtk (gdk_ios_events_key_idle, key, gdk_ios_events_key_free);
++}
+diff --git a/gdk/ios/gdkiosmonitor-private.h b/gdk/ios/gdkiosmonitor-private.h
+new file mode 100644
+index 0000000..55f15c6
+--- /dev/null
++++ b/gdk/ios/gdkiosmonitor-private.h
+@@ -0,0 +1,22 @@
++#pragma once
++
++#include "gdkmonitorprivate.h"
++
++#include "gdkiosmonitor.h"
++
++G_BEGIN_DECLS
++
++struct _GdkIosMonitor
++{
++  GdkMonitor parent_instance;
++};
++
++struct _GdkIosMonitorClass
++{
++  GdkMonitorClass parent_class;
++};
++
++GdkMonitor *gdk_ios_monitor_new (GdkDisplay *display);
++void gdk_ios_monitor_update (GdkIosMonitor *self, const GdkRectangle *bounds, double scale, int refresh_rate_mhz);
++
++G_END_DECLS
+diff --git a/gdk/ios/gdkiosmonitor.c b/gdk/ios/gdkiosmonitor.c
+new file mode 100644
+index 0000000..879c049
+--- /dev/null
++++ b/gdk/ios/gdkiosmonitor.c
+@@ -0,0 +1,34 @@
++/* GDK iOS backend: GdkMonitor. SPDX-License-Identifier: LGPL-2.1-or-later */
++
++#include "config.h"
++
++#include "gdkiosmonitor-private.h"
++
++G_DEFINE_TYPE (GdkIosMonitor, gdk_ios_monitor, GDK_TYPE_MONITOR)
++
++static void
++gdk_ios_monitor_class_init (GdkIosMonitorClass *klass)
++{
++}
++
++static void
++gdk_ios_monitor_init (GdkIosMonitor *self)
++{
++}
++
++GdkMonitor *
++gdk_ios_monitor_new (GdkDisplay *display)
++{
++  return g_object_new (GDK_TYPE_IOS_MONITOR, "display", display, NULL);
++}
++
++void
++gdk_ios_monitor_update (GdkIosMonitor *self, const GdkRectangle *bounds, double scale, int refresh_rate_mhz)
++{
++  GdkMonitor *monitor = (GdkMonitor *) self;
++  gdk_monitor_set_geometry (monitor, bounds);
++  gdk_monitor_set_scale (monitor, scale);
++  gdk_monitor_set_refresh_rate (monitor, refresh_rate_mhz);
++  gdk_monitor_set_manufacturer (monitor, "Apple");
++  gdk_monitor_set_model (monitor, "iPhone");
++}
+diff --git a/gdk/ios/gdkiosmonitor.h b/gdk/ios/gdkiosmonitor.h
+new file mode 100644
+index 0000000..0449f91
+--- /dev/null
++++ b/gdk/ios/gdkiosmonitor.h
+@@ -0,0 +1,17 @@
++#pragma once
++
++#include <gdk/gdk.h>
++
++G_BEGIN_DECLS
++
++#define GDK_TYPE_IOS_MONITOR (gdk_ios_monitor_get_type ())
++#define GDK_IOS_MONITOR(o) (G_TYPE_CHECK_INSTANCE_CAST ((o), GDK_TYPE_IOS_MONITOR, GdkIosMonitor))
++#define GDK_IS_IOS_MONITOR(o) (G_TYPE_CHECK_INSTANCE_TYPE ((o), GDK_TYPE_IOS_MONITOR))
++
++typedef struct _GdkIosMonitor GdkIosMonitor;
++typedef struct _GdkIosMonitorClass GdkIosMonitorClass;
++
++GDK_AVAILABLE_IN_ALL
++GType gdk_ios_monitor_get_type (void);
++
++G_END_DECLS
+diff --git a/gdk/ios/gdkiospopup-private.h b/gdk/ios/gdkiospopup-private.h
+new file mode 100644
+index 0000000..6a518d4
+--- /dev/null
++++ b/gdk/ios/gdkiospopup-private.h
+@@ -0,0 +1,23 @@
++#pragma once
++
++#include "gdkpopupprivate.h"
++
++#include "gdkiossurface-private.h"
++#include "gdkiospopup.h"
++
++G_BEGIN_DECLS
++
++struct _GdkIosPopup
++{
++  GdkIosSurface parent_instance;
++
++  GdkPopupLayout *layout;
++  GdkRectangle popup_bounds;
++};
++
++struct _GdkIosPopupClass
++{
++  GdkIosSurfaceClass parent_class;
++};
++
++G_END_DECLS
+diff --git a/gdk/ios/gdkiospopup.c b/gdk/ios/gdkiospopup.c
+new file mode 100644
+index 0000000..c074eaa
+--- /dev/null
++++ b/gdk/ios/gdkiospopup.c
+@@ -0,0 +1,181 @@
++/* GDK iOS backend: GdkPopup as a subview of its toplevel. SPDX-License-Identifier: LGPL-2.1-or-later */
++
++#include "config.h"
++
++#include <string.h>
++
++#include "gdkpopuplayout.h"
++
++#include "gdkiosruntime-private.h"
++#include "gdkiostoplevel-private.h"
++
++#include "gdkiospopup-private.h"
++
++static gboolean
++gdk_ios_popup_present (GdkPopup *popup, int width, int height, GdkPopupLayout *layout)
++{
++  GdkIosPopup *self = (GdkIosPopup *) popup;
++  GdkIosSurface *impl = (GdkIosSurface *) self;
++  GdkSurface *surface = (GdkSurface *) self;
++
++  GdkIosToplevel *parent = gdk_ios_surface_get_toplevel (impl);
++  GdkIosSurface *parent_impl = (GdkIosSurface *) parent;
++  GdkSurface *parent_surface = (GdkSurface *) parent;
++
++  impl->visible = TRUE;
++
++  gdk_popup_layout_ref (layout);
++  g_clear_pointer (&self->layout, gdk_popup_layout_unref);
++  self->layout = layout;
++
++  int shadow_left, shadow_right, shadow_top, shadow_bottom;
++  gdk_popup_layout_get_shadow_width (layout, &shadow_left, &shadow_right, &shadow_top, &shadow_bottom);
++
++  GdkRectangle bounds = { 0, 0, parent_surface->width, parent_surface->height };
++
++  memset (&self->popup_bounds, 0, sizeof (GdkRectangle));
++  gdk_surface_layout_popup_helper (surface, width, height,
++                                   shadow_left, shadow_right, shadow_top, shadow_bottom,
++                                   NULL, &bounds, self->layout,
++                                   GDK_SURFACE_LAYOUT_POPUP_HELPER_ROOT_OUT,
++                                   &self->popup_bounds);
++
++  g_debug ("iOS popup present %p: %dx%d at (%d|%d)", self,
++           self->popup_bounds.width, self->popup_bounds.height, self->popup_bounds.x, self->popup_bounds.y);
++
++  gdk_ios_surface_attach (impl, parent_impl, &self->popup_bounds);
++
++  if (!GDK_SURFACE_IS_MAPPED (surface))
++    gdk_ios_surface_handle_map (impl);
++
++  return TRUE;
++}
++
++static GdkGravity
++gdk_ios_popup_get_surface_anchor (GdkPopup *popup)
++{
++  return GDK_SURFACE (popup)->popup.surface_anchor;
++}
++
++static GdkGravity
++gdk_ios_popup_get_rect_anchor (GdkPopup *popup)
++{
++  return GDK_SURFACE (popup)->popup.rect_anchor;
++}
++
++static int
++gdk_ios_popup_get_position_x (GdkPopup *popup)
++{
++  GdkSurface *surface = (GdkSurface *) popup;
++  return surface->x - (surface->parent ? surface->parent->x : 0);
++}
++
++static int
++gdk_ios_popup_get_position_y (GdkPopup *popup)
++{
++  GdkSurface *surface = (GdkSurface *) popup;
++  return surface->y - (surface->parent ? surface->parent->y : 0);
++}
++
++static void
++gdk_ios_popup_iface_init (GdkPopupInterface *iface)
++{
++  iface->present = gdk_ios_popup_present;
++  iface->get_surface_anchor = gdk_ios_popup_get_surface_anchor;
++  iface->get_rect_anchor = gdk_ios_popup_get_rect_anchor;
++  iface->get_position_x = gdk_ios_popup_get_position_x;
++  iface->get_position_y = gdk_ios_popup_get_position_y;
++}
++
++G_DEFINE_TYPE_WITH_CODE (GdkIosPopup, gdk_ios_popup, GDK_TYPE_IOS_SURFACE,
++                         G_IMPLEMENT_INTERFACE (GDK_TYPE_POPUP, gdk_ios_popup_iface_init))
++
++enum
++{
++  N_PROPERTIES = 1,
++};
++
++static void
++gdk_ios_popup_finalize (GObject *object)
++{
++  GdkIosPopup *self = (GdkIosPopup *) object;
++  GdkSurface *parent = ((GdkSurface *) self)->parent;
++
++  if (parent != NULL)
++    parent->children = g_list_remove (parent->children, self);
++
++  g_clear_object (&GDK_SURFACE (self)->parent);
++  g_clear_pointer (&self->layout, gdk_popup_layout_unref);
++
++  G_OBJECT_CLASS (gdk_ios_popup_parent_class)->finalize (object);
++}
++
++static void
++gdk_ios_popup_get_property (GObject *object, guint prop_id, GValue *value, GParamSpec *pspec)
++{
++  GdkSurface *surface = GDK_SURFACE (object);
++
++  switch (prop_id)
++    {
++    case N_PROPERTIES + GDK_POPUP_PROP_PARENT:
++      g_value_set_object (value, surface->parent);
++      break;
++    case N_PROPERTIES + GDK_POPUP_PROP_AUTOHIDE:
++      g_value_set_boolean (value, surface->autohide);
++      break;
++    default:
++      G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
++    }
++}
++
++static void
++gdk_ios_popup_set_property (GObject *object, guint prop_id, const GValue *value, GParamSpec *pspec)
++{
++  GdkSurface *surface = (GdkSurface *) object;
++
++  switch (prop_id)
++    {
++    case N_PROPERTIES + GDK_POPUP_PROP_PARENT:
++      surface->parent = g_value_dup_object (value);
++      if (surface->parent)
++        surface->parent->children = g_list_prepend (surface->parent->children, surface);
++      break;
++    case N_PROPERTIES + GDK_POPUP_PROP_AUTOHIDE:
++      surface->autohide = g_value_get_boolean (value);
++      break;
++    default:
++      G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
++    }
++}
++
++static void
++gdk_ios_popup_reposition (GdkIosSurface *impl)
++{
++  GdkIosPopup *self = (GdkIosPopup *) impl;
++  GdkSurface *surface = (GdkSurface *) self;
++
++  if (self->layout == NULL || surface->parent == NULL || !impl->visible)
++    return;
++
++  gdk_ios_popup_present ((GdkPopup *) self, surface->width, surface->height, self->layout);
++}
++
++static void
++gdk_ios_popup_class_init (GdkIosPopupClass *klass)
++{
++  GObjectClass *object_class = G_OBJECT_CLASS (klass);
++  GdkIosSurfaceClass *surface_impl_class = GDK_IOS_SURFACE_CLASS (klass);
++
++  object_class->finalize = gdk_ios_popup_finalize;
++  object_class->get_property = gdk_ios_popup_get_property;
++  object_class->set_property = gdk_ios_popup_set_property;
++
++  surface_impl_class->reposition = gdk_ios_popup_reposition;
++
++  gdk_popup_install_properties (object_class, N_PROPERTIES);
++}
++
++static void
++gdk_ios_popup_init (GdkIosPopup *self)
++{
++}
+diff --git a/gdk/ios/gdkiospopup.h b/gdk/ios/gdkiospopup.h
+new file mode 100644
+index 0000000..e9f1c6a
+--- /dev/null
++++ b/gdk/ios/gdkiospopup.h
+@@ -0,0 +1,17 @@
++#pragma once
++
++#include <gdk/gdk.h>
++
++G_BEGIN_DECLS
++
++#define GDK_TYPE_IOS_POPUP (gdk_ios_popup_get_type ())
++#define GDK_IOS_POPUP(o) (G_TYPE_CHECK_INSTANCE_CAST ((o), GDK_TYPE_IOS_POPUP, GdkIosPopup))
++#define GDK_IS_IOS_POPUP(o) (G_TYPE_CHECK_INSTANCE_TYPE ((o), GDK_TYPE_IOS_POPUP))
++
++typedef struct _GdkIosPopup GdkIosPopup;
++typedef struct _GdkIosPopupClass GdkIosPopupClass;
++
++GDK_AVAILABLE_IN_ALL
++GType gdk_ios_popup_get_type (void);
++
++G_END_DECLS
+diff --git a/gdk/ios/gdkiosruntime-private.h b/gdk/ios/gdkiosruntime-private.h
+new file mode 100644
+index 0000000..930f8ef
+--- /dev/null
++++ b/gdk/ios/gdkiosruntime-private.h
+@@ -0,0 +1,31 @@
++#pragma once
++
++#include "gdkiosruntime.h"
++
++G_BEGIN_DECLS
++
++/* True once UIKit has created the window and root view (main thread done launching). */
++gboolean gdk_ios_runtime_is_ready (void);
++
++/* Run @func on the GTK thread's main context. Safe from any thread; always queued. */
++void gdk_ios_post_to_gtk (GSourceFunc func, gpointer data, GDestroyNotify destroy);
++
++/* Log through NSLog so messages land in the unified log as well as stderr. */
++void gdk_ios_runtime_log (const char *message);
++
++#ifdef __OBJC__
++#import <UIKit/UIKit.h>
++
++@interface GdkIosRootView : UIView
++@property (nonatomic, assign) UIView *grabbedView;
++@end
++
++GdkIosRootView *gdk_ios_runtime_get_root_view (void);
++UIWindow *gdk_ios_runtime_get_window (void);
++
++/* Run @block on the main thread; inline when already there, dispatch_sync otherwise. */
++void gdk_ios_run_on_main_sync (void (^block)(void));
++void gdk_ios_run_on_main_async (void (^block)(void));
++#endif
++
++G_END_DECLS
+diff --git a/gdk/ios/gdkiosruntime.c b/gdk/ios/gdkiosruntime.c
+new file mode 100644
+index 0000000..37ef5bb
+--- /dev/null
++++ b/gdk/ios/gdkiosruntime.c
+@@ -0,0 +1,251 @@
++/*
++ * GDK iOS backend: UIKit application shell and the GTK thread.
++ *
++ * UIKit owns the process main thread; GTK runs on its own thread and
++ * talks to UIKit by dispatching blocks to the main queue. UIKit talks
++ * back by queueing idles on GTK's main context.
++ *
++ * SPDX-License-Identifier: LGPL-2.1-or-later
++ */
++
++#include "config.h"
++
++#import <UIKit/UIKit.h>
++
++#include <stdlib.h>
++
++#include "gdkiosruntime-private.h"
++#include "gdkiosdisplay-private.h"
++#include "gdkiossurface-private.h"
++#include "gdkiosevents-private.h"
++
++static GdkIosMainFunc gdk_ios_app_main = NULL;
++static int gdk_ios_argc = 0;
++static char **gdk_ios_argv = NULL;
++
++static UIWindow *gdk_ios_window = nil;
++static GdkIosRootView *gdk_ios_root_view = nil;
++static GThread *gdk_ios_gtk_thread = NULL;
++static volatile gint gdk_ios_ready = 0;
++
++@implementation GdkIosRootView
++
++- (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event
++{
++  /* A GDK grab (autohide popups) routes every touch to the grabbed
++   * surface, even outside it, which is how GTK learns to close menus. */
++  if (self.grabbedView != nil && !self.grabbedView.hidden && self.grabbedView.superview != nil)
++    return self.grabbedView;
++  return [super hitTest:point withEvent:event];
++}
++
++@end
++
++static gboolean
++gdk_ios_runtime_dark_idle (gpointer data)
++{
++  GdkIosDisplay *display = gdk_ios_display_get_instance ();
++  if (display)
++    gdk_ios_display_set_dark (display, GPOINTER_TO_INT (data));
++  return G_SOURCE_REMOVE;
++}
++
++@interface GdkIosViewController : UIViewController
++@end
++
++@implementation GdkIosViewController
++
++- (BOOL)prefersStatusBarHidden
++{
++  return NO;
++}
++
++- (UIStatusBarStyle)preferredStatusBarStyle
++{
++  return UIStatusBarStyleDefault;
++}
++
++- (void)traitCollectionDidChange:(UITraitCollection *)previous
++{
++  [super traitCollectionDidChange:previous];
++  gboolean dark = self.traitCollection.userInterfaceStyle == UIUserInterfaceStyleDark;
++  gdk_ios_post_to_gtk (gdk_ios_runtime_dark_idle, GINT_TO_POINTER (dark), NULL);
++}
++
++@end
++
++static gpointer
++gdk_ios_gtk_thread_func (gpointer data)
++{
++  int ret = gdk_ios_app_main (gdk_ios_argc, gdk_ios_argv);
++  g_debug ("GTK main returned %d, exiting", ret);
++  dispatch_async (dispatch_get_main_queue (), ^{
++    exit (ret);
++  });
++  return NULL;
++}
++
++static void
++gdk_ios_runtime_debug_tap (double x, double y)
++{
++  GdkIosRootView *root = gdk_ios_runtime_get_root_view ();
++  UIView *hit = [root hitTest:CGPointMake (x, y) withEvent:nil];
++  if (![hit isKindOfClass:[GdkIosSurfaceView class]])
++    {
++      NSLog (@"debug tap at %.0f,%.0f hit no surface view (%@)", x, y, hit);
++      return;
++    }
++  GdkIosSurfaceView *view = (GdkIosSurfaceView *) hit;
++  if (view.gdkSurface == NULL)
++    return;
++  CGPoint local = [root convertPoint:CGPointMake (x, y) toView:view];
++  guint sequence = (guint) g_random_int ();
++  guint32 now = (guint32) (g_get_monotonic_time () / 1000);
++  NSLog (@"debug tap at %.0f,%.0f -> surface %p local %.0f,%.0f", x, y, view.gdkSurface, local.x, local.y);
++  gdk_ios_events_post_touch (view.gdkSurface, GDK_TOUCH_BEGIN, sequence, local.x, local.y, now);
++  GdkIosSurface *surface = view.gdkSurface;
++  dispatch_after (dispatch_time (DISPATCH_TIME_NOW, 80 * NSEC_PER_MSEC), dispatch_get_main_queue (), ^{
++    if (view.gdkSurface == surface)
++      gdk_ios_events_post_touch (surface, GDK_TOUCH_END, sequence, local.x, local.y, now + 80);
++  });
++}
++
++@interface GdkIosAppDelegate : UIResponder <UIApplicationDelegate>
++@end
++
++@implementation GdkIosAppDelegate
++
++- (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)options
++{
++  gdk_ios_window = [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
++  GdkIosViewController *controller = [[GdkIosViewController alloc] init];
++  gdk_ios_root_view = [[GdkIosRootView alloc] initWithFrame:gdk_ios_window.bounds];
++  gdk_ios_root_view.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
++  gdk_ios_root_view.backgroundColor = [UIColor blackColor];
++  gdk_ios_root_view.multipleTouchEnabled = YES;
++  controller.view = gdk_ios_root_view;
++  gdk_ios_window.rootViewController = controller;
++  [gdk_ios_window makeKeyAndVisible];
++
++  g_atomic_int_set (&gdk_ios_ready, 1);
++  gdk_ios_runtime_log ("GDK iOS runtime: window up, starting GTK thread");
++  gdk_ios_gtk_thread = g_thread_new ("GTK Thread", gdk_ios_gtk_thread_func, NULL);
++
++  /* GDK_IOS_DEBUG_TAPS="x,y,ms;x,y,ms": synthesize taps (in points) for
++   * automated checks in the simulator, where nothing can inject touches. */
++  const char *taps = g_getenv ("GDK_IOS_DEBUG_TAPS");
++  if (taps != NULL)
++    {
++      char **list = g_strsplit (taps, ";", -1);
++      for (int i = 0; list[i] != NULL; i++)
++        {
++          double x = 0, y = 0;
++          int ms = 1000;
++          if (sscanf (list[i], "%lf,%lf,%d", &x, &y, &ms) < 2)
++            continue;
++          dispatch_after (dispatch_time (DISPATCH_TIME_NOW, (int64_t) ms * NSEC_PER_MSEC), dispatch_get_main_queue (), ^{
++            gdk_ios_runtime_debug_tap (x, y);
++          });
++        }
++      g_strfreev (list);
++    }
++  return YES;
++}
++
++@end
++
++/* GLib messages go to stderr, which nobody sees on a device: mirror
++ * them into the unified log (Console.app, `log stream`). */
++static GLogWriterOutput
++gdk_ios_runtime_log_writer (GLogLevelFlags   log_level,
++                            const GLogField *fields,
++                            gsize            n_fields,
++                            gpointer         user_data)
++{
++  const char *message = NULL;
++  const char *domain = NULL;
++  for (gsize i = 0; i < n_fields; i++)
++    {
++      if (g_strcmp0 (fields[i].key, "MESSAGE") == 0)
++        message = fields[i].value;
++      else if (g_strcmp0 (fields[i].key, "GLIB_DOMAIN") == 0)
++        domain = fields[i].value;
++    }
++  const char *level = "";
++  if (log_level & G_LOG_LEVEL_ERROR) level = "ERROR";
++  else if (log_level & G_LOG_LEVEL_CRITICAL) level = "CRITICAL";
++  else if (log_level & G_LOG_LEVEL_WARNING) level = "WARNING";
++  else if (log_level & G_LOG_LEVEL_MESSAGE) level = "MESSAGE";
++  else if (log_level & G_LOG_LEVEL_INFO) level = "INFO";
++  else if (log_level & G_LOG_LEVEL_DEBUG) level = "DEBUG";
++  NSLog (@"[%s] %s: %s", domain ? domain : "?", level, message ? message : "");
++  return g_log_writer_standard_streams (log_level, fields, n_fields, user_data);
++}
++
++int
++gdk_ios_main (int argc, char **argv, GdkIosMainFunc app_main)
++{
++  gdk_ios_app_main = app_main;
++  g_log_set_writer_func (gdk_ios_runtime_log_writer, NULL, NULL);
++  gdk_ios_argc = argc;
++  gdk_ios_argv = argv;
++
++  g_setenv ("GDK_BACKEND", "ios", TRUE);
++  /* static GIO has no module directory compiled in; give it one so it
++   * does not try to scan a NULL path */
++  if (g_getenv ("GIO_MODULE_DIR") == NULL)
++    g_setenv ("GIO_MODULE_DIR", [[[NSBundle mainBundle] bundlePath] UTF8String], TRUE);
++  if (g_getenv ("GSK_RENDERER") == NULL)
++    g_setenv ("GSK_RENDERER", "cairo", TRUE);
++
++  @autoreleasepool {
++    return UIApplicationMain (argc, argv, nil, NSStringFromClass ([GdkIosAppDelegate class]));
++  }
++}
++
++gboolean
++gdk_ios_runtime_is_ready (void)
++{
++  return g_atomic_int_get (&gdk_ios_ready) != 0;
++}
++
++GdkIosRootView *
++gdk_ios_runtime_get_root_view (void)
++{
++  return gdk_ios_root_view;
++}
++
++UIWindow *
++gdk_ios_runtime_get_window (void)
++{
++  return gdk_ios_window;
++}
++
++void
++gdk_ios_run_on_main_sync (void (^block)(void))
++{
++  if ([NSThread isMainThread])
++    block ();
++  else
++    dispatch_sync (dispatch_get_main_queue (), block);
++}
++
++void
++gdk_ios_run_on_main_async (void (^block)(void))
++{
++  dispatch_async (dispatch_get_main_queue (), block);
++}
++
++void
++gdk_ios_post_to_gtk (GSourceFunc func, gpointer data, GDestroyNotify destroy)
++{
++  /* g_idle_add always queues on the default context, which the GTK
++   * thread iterates; never run inline on the caller's thread. */
++  g_idle_add_full (G_PRIORITY_DEFAULT, func, data, destroy);
++}
++
++void
++gdk_ios_runtime_log (const char *message)
++{
++  NSLog (@"%s", message);
++}
+diff --git a/gdk/ios/gdkiosruntime.h b/gdk/ios/gdkiosruntime.h
+new file mode 100644
+index 0000000..9c40f6d
+--- /dev/null
++++ b/gdk/ios/gdkiosruntime.h
+@@ -0,0 +1,23 @@
++#pragma once
++
++#include <gdk/gdk.h>
++
++G_BEGIN_DECLS
++
++/**
++ * GdkIosMainFunc:
++ *
++ * The application's real main: runs on the GTK thread once UIKit is up.
++ */
++typedef int (*GdkIosMainFunc) (int argc, char **argv);
++
++/**
++ * gdk_ios_main:
++ *
++ * Hands the process to UIKit and runs @app_main on a dedicated GTK
++ * thread once the application has finished launching. Never returns.
++ */
++GDK_AVAILABLE_IN_ALL
++int gdk_ios_main (int argc, char **argv, GdkIosMainFunc app_main);
++
++G_END_DECLS
+diff --git a/gdk/ios/gdkiosseat-private.h b/gdk/ios/gdkiosseat-private.h
+new file mode 100644
+index 0000000..cdf7f49
+--- /dev/null
++++ b/gdk/ios/gdkiosseat-private.h
+@@ -0,0 +1,72 @@
++#pragma once
++
++#include "gdkseatprivate.h"
++#include "gdkdeviceprivate.h"
++#include "gdkkeysprivate.h"
++
++#include "gdkiosseat.h"
++
++G_BEGIN_DECLS
++
++typedef struct _GdkIosSurface GdkIosSurface;
++
++struct _GdkIosDevice
++{
++  GdkDevice parent_instance;
++
++  /* surface the device was last seen on (weak) and where */
++  GdkIosSurface *last;
++  double last_x;
++  double last_y;
++  GdkModifierType last_mods;
++};
++
++struct _GdkIosDeviceClass
++{
++  GdkDeviceClass parent_class;
++};
++
++struct _GdkIosSeat
++{
++  GdkSeat parent_instance;
++
++  GdkDevice *logical_pointer;
++  GdkDevice *logical_touchscreen;
++  GdkDevice *logical_keyboard;
++  GdkDeviceTool *finger;
++
++  GdkIosSurface *grab_surface; /* weak */
++};
++
++struct _GdkIosSeatClass
++{
++  GdkSeatClass parent_class;
++};
++
++GdkIosSeat *gdk_ios_seat_new (GdkDisplay *display);
++void gdk_ios_seat_consume_event (GdkDisplay *display, GdkEvent *event);
++
++void gdk_ios_device_maybe_update_surface (GdkIosDevice *self, GdkIosSurface *new_surface,
++                                          GdkModifierType mods, guint32 time, double x, double y);
++void gdk_ios_device_keyboard_maybe_update_surface_focus (GdkIosDevice *self, GdkIosSurface *new_surface);
++void gdk_ios_device_forget_surface (GdkIosDevice *self, GdkIosSurface *surface);
++
++#define GDK_TYPE_IOS_KEYMAP (gdk_ios_keymap_get_type ())
++#define GDK_IOS_KEYMAP(o) (G_TYPE_CHECK_INSTANCE_CAST ((o), GDK_TYPE_IOS_KEYMAP, GdkIosKeymap))
++
++typedef struct _GdkIosKeymap GdkIosKeymap;
++typedef struct _GdkIosKeymapClass GdkIosKeymapClass;
++
++struct _GdkIosKeymap
++{
++  GdkKeymap parent_instance;
++};
++
++struct _GdkIosKeymapClass
++{
++  GdkKeymapClass parent_class;
++};
++
++GType gdk_ios_keymap_get_type (void);
++
++G_END_DECLS
+diff --git a/gdk/ios/gdkiosseat.c b/gdk/ios/gdkiosseat.c
+new file mode 100644
+index 0000000..d87e1f6
+--- /dev/null
++++ b/gdk/ios/gdkiosseat.c
+@@ -0,0 +1,357 @@
++/* GDK iOS backend: seat, devices and a unicode keymap. SPDX-License-Identifier: LGPL-2.1-or-later */
++
++#include "config.h"
++
++#import <UIKit/UIKit.h>
++
++#include "gdkdisplayprivate.h"
++#include "gdkeventsprivate.h"
++#include "gdkdevicetoolprivate.h"
++#include "gdkkeysyms.h"
++
++#include "gdkiosruntime-private.h"
++#include "gdkiossurface-private.h"
++
++#include "gdkiosseat-private.h"
++
++/* ── device ─────────────────────────────────────────────────────────── */
++
++G_DEFINE_TYPE (GdkIosDevice, gdk_ios_device, GDK_TYPE_DEVICE)
++
++static void
++gdk_ios_device_finalize (GObject *object)
++{
++  GdkIosDevice *self = (GdkIosDevice *) object;
++  if (self->last)
++    g_object_remove_weak_pointer ((GObject *) self->last, (gpointer *) &self->last);
++  G_OBJECT_CLASS (gdk_ios_device_parent_class)->finalize (object);
++}
++
++static void
++gdk_ios_device_set_surface_cursor (GdkDevice *device, GdkSurface *surface, GdkCursor *cursor)
++{
++}
++
++static GdkSurface *
++gdk_ios_device_surface_at_position (GdkDevice *device, double *win_x, double *win_y, GdkModifierType *mask)
++{
++  GdkIosDevice *self = (GdkIosDevice *) device;
++  if (win_x)
++    *win_x = self->last_x;
++  if (win_y)
++    *win_y = self->last_y;
++  if (mask)
++    *mask = self->last_mods;
++  return (GdkSurface *) self->last;
++}
++
++static void
++gdk_ios_device_class_init (GdkIosDeviceClass *klass)
++{
++  GObjectClass *object_class = G_OBJECT_CLASS (klass);
++  GdkDeviceClass *device_class = GDK_DEVICE_CLASS (klass);
++
++  object_class->finalize = gdk_ios_device_finalize;
++  device_class->set_surface_cursor = gdk_ios_device_set_surface_cursor;
++  device_class->surface_at_position = gdk_ios_device_surface_at_position;
++}
++
++static void
++gdk_ios_device_init (GdkIosDevice *self)
++{
++}
++
++void
++gdk_ios_device_maybe_update_surface (GdkIosDevice *self, GdkIosSurface *new_surface,
++                                     GdkModifierType mods, guint32 time, double x, double y)
++{
++  GdkModifierType old_mods = self->last_mods;
++  double old_x = self->last_x, old_y = self->last_y;
++  self->last_x = x;
++  self->last_y = y;
++  self->last_mods = mods;
++  if (self->last == new_surface)
++    return;
++
++  GdkDisplay *display = gdk_device_get_display ((GdkDevice *) self);
++  if (self->last)
++    {
++      GdkEvent *ev = gdk_crossing_event_new (GDK_LEAVE_NOTIFY, (GdkSurface *) self->last, (GdkDevice *) self,
++                                             time, old_mods, old_x, old_y,
++                                             GDK_CROSSING_NORMAL, GDK_NOTIFY_UNKNOWN);
++      gdk_ios_seat_consume_event (display, ev);
++      g_object_remove_weak_pointer ((GObject *) self->last, (gpointer *) &self->last);
++    }
++  self->last = new_surface;
++  g_object_add_weak_pointer ((GObject *) self->last, (gpointer *) &self->last);
++  GdkEvent *ev = gdk_crossing_event_new (GDK_ENTER_NOTIFY, (GdkSurface *) new_surface, (GdkDevice *) self,
++                                         time, mods, x, y,
++                                         GDK_CROSSING_NORMAL, GDK_NOTIFY_UNKNOWN);
++  gdk_ios_seat_consume_event (display, ev);
++}
++
++void
++gdk_ios_device_keyboard_maybe_update_surface_focus (GdkIosDevice *self, GdkIosSurface *new_surface)
++{
++  if (self->last == new_surface)
++    return;
++  GdkDisplay *display = gdk_device_get_display ((GdkDevice *) self);
++  if (self->last)
++    {
++      GdkEvent *ev = gdk_focus_event_new ((GdkSurface *) self->last, (GdkDevice *) self, FALSE);
++      gdk_ios_seat_consume_event (display, ev);
++      g_object_remove_weak_pointer ((GObject *) self->last, (gpointer *) &self->last);
++    }
++  self->last = new_surface;
++  if (self->last)
++    {
++      g_object_add_weak_pointer ((GObject *) self->last, (gpointer *) &self->last);
++      GdkEvent *ev = gdk_focus_event_new ((GdkSurface *) self->last, (GdkDevice *) self, TRUE);
++      gdk_ios_seat_consume_event (display, ev);
++    }
++}
++
++void
++gdk_ios_device_forget_surface (GdkIosDevice *self, GdkIosSurface *surface)
++{
++  if (self->last == surface)
++    {
++      g_object_remove_weak_pointer ((GObject *) self->last, (gpointer *) &self->last);
++      self->last = NULL;
++    }
++}
++
++/* ── seat ───────────────────────────────────────────────────────────── */
++
++G_DEFINE_TYPE (GdkIosSeat, gdk_ios_seat, GDK_TYPE_SEAT)
++
++static void
++gdk_ios_seat_constructed (GObject *object)
++{
++  GdkIosSeat *self = (GdkIosSeat *) object;
++  GdkSeat *seat = (GdkSeat *) self;
++  G_OBJECT_CLASS (gdk_ios_seat_parent_class)->constructed (object);
++  GdkDisplay *display = gdk_seat_get_display (seat);
++
++  self->logical_pointer = g_object_new (GDK_TYPE_IOS_DEVICE,
++                                        "name", "iOS Pointer",
++                                        "source", GDK_SOURCE_MOUSE,
++                                        "has-cursor", TRUE,
++                                        "display", display,
++                                        "seat", seat,
++                                        NULL);
++  self->logical_touchscreen = g_object_new (GDK_TYPE_IOS_DEVICE,
++                                            "name", "iOS Touchscreen",
++                                            "source", GDK_SOURCE_TOUCHSCREEN,
++                                            "has-cursor", FALSE,
++                                            "display", display,
++                                            "seat", seat,
++                                            NULL);
++  self->logical_keyboard = g_object_new (GDK_TYPE_IOS_DEVICE,
++                                         "name", "iOS Keyboard",
++                                         "source", GDK_SOURCE_KEYBOARD,
++                                         "has-cursor", FALSE,
++                                         "display", display,
++                                         "seat", seat,
++                                         NULL);
++}
++
++static void
++gdk_ios_seat_finalize (GObject *object)
++{
++  GdkIosSeat *self = (GdkIosSeat *) object;
++  g_object_unref (self->logical_pointer);
++  g_object_unref (self->logical_touchscreen);
++  g_object_unref (self->logical_keyboard);
++  g_object_unref (self->finger);
++  G_OBJECT_CLASS (gdk_ios_seat_parent_class)->finalize (object);
++}
++
++static GdkSeatCapabilities
++gdk_ios_seat_get_capabilities (GdkSeat *seat)
++{
++  return GDK_SEAT_CAPABILITY_POINTER | GDK_SEAT_CAPABILITY_TOUCH | GDK_SEAT_CAPABILITY_KEYBOARD;
++}
++
++static GdkGrabStatus
++gdk_ios_seat_grab (GdkSeat *seat, GdkSurface *surface)
++{
++  GdkIosSeat *self = (GdkIosSeat *) seat;
++  GdkIosSurface *impl = (GdkIosSurface *) surface;
++  self->grab_surface = impl;
++  UIView *view = (UIView *) impl->view;
++  gdk_ios_run_on_main_sync (^{
++    gdk_ios_runtime_get_root_view ().grabbedView = view;
++  });
++  return GDK_GRAB_SUCCESS;
++}
++
++static void
++gdk_ios_seat_ungrab (GdkSeat *seat, GdkSurface *surface)
++{
++  GdkIosSeat *self = (GdkIosSeat *) seat;
++  self->grab_surface = NULL;
++  gdk_ios_run_on_main_sync (^{
++    gdk_ios_runtime_get_root_view ().grabbedView = nil;
++  });
++}
++
++static GdkDevice *
++gdk_ios_seat_get_logical_device (GdkSeat *seat, GdkSeatCapabilities capability)
++{
++  GdkIosSeat *self = (GdkIosSeat *) seat;
++  if (capability & (GDK_SEAT_CAPABILITY_POINTER | GDK_SEAT_CAPABILITY_TABLET_STYLUS))
++    return self->logical_pointer;
++  if (capability & GDK_SEAT_CAPABILITY_TOUCH)
++    return self->logical_touchscreen;
++  if (capability & GDK_SEAT_CAPABILITY_KEYBOARD)
++    return self->logical_keyboard;
++  return NULL;
++}
++
++static GList *
++gdk_ios_seat_get_devices (GdkSeat *seat, GdkSeatCapabilities capabilities)
++{
++  GdkIosSeat *self = (GdkIosSeat *) seat;
++  GList *devices = NULL;
++  if (capabilities & GDK_SEAT_CAPABILITY_POINTER)
++    devices = g_list_prepend (devices, self->logical_pointer);
++  if (capabilities & GDK_SEAT_CAPABILITY_TOUCH)
++    devices = g_list_prepend (devices, self->logical_touchscreen);
++  if (capabilities & GDK_SEAT_CAPABILITY_KEYBOARD)
++    devices = g_list_prepend (devices, self->logical_keyboard);
++  return g_list_reverse (devices);
++}
++
++static GList *
++gdk_ios_seat_get_tools (GdkSeat *seat)
++{
++  GdkIosSeat *self = (GdkIosSeat *) seat;
++  return g_list_prepend (NULL, self->finger);
++}
++
++static void
++gdk_ios_seat_class_init (GdkIosSeatClass *klass)
++{
++  GObjectClass *object_class = G_OBJECT_CLASS (klass);
++  GdkSeatClass *seat_class = (GdkSeatClass *) klass;
++
++  object_class->constructed = gdk_ios_seat_constructed;
++  object_class->finalize = gdk_ios_seat_finalize;
++  seat_class->get_capabilities = gdk_ios_seat_get_capabilities;
++  seat_class->grab = gdk_ios_seat_grab;
++  seat_class->ungrab = gdk_ios_seat_ungrab;
++  seat_class->get_logical_device = gdk_ios_seat_get_logical_device;
++  seat_class->get_devices = gdk_ios_seat_get_devices;
++  seat_class->get_tools = gdk_ios_seat_get_tools;
++}
++
++static void
++gdk_ios_seat_init (GdkIosSeat *self)
++{
++  self->finger = gdk_device_tool_new (1, 0, GDK_DEVICE_TOOL_TYPE_UNKNOWN, GDK_AXIS_FLAG_X | GDK_AXIS_FLAG_Y);
++}
++
++GdkIosSeat *
++gdk_ios_seat_new (GdkDisplay *display)
++{
++  return g_object_new (GDK_TYPE_IOS_SEAT, "display", display, NULL);
++}
++
++void
++gdk_ios_seat_consume_event (GdkDisplay *display, GdkEvent *event)
++{
++  GList *node = _gdk_event_queue_append (display, event);
++  _gdk_windowing_got_event (display, node, event, _gdk_display_get_next_serial (display));
++}
++
++/* ── keymap: hardware keycode == keyval ─────────────────────────────── */
++
++G_DEFINE_TYPE (GdkIosKeymap, gdk_ios_keymap, GDK_TYPE_KEYMAP)
++
++static PangoDirection
++gdk_ios_keymap_get_direction (GdkKeymap *keymap)
++{
++  return PANGO_DIRECTION_NEUTRAL;
++}
++
++static gboolean
++gdk_ios_keymap_false (GdkKeymap *keymap)
++{
++  return FALSE;
++}
++
++static gboolean
++gdk_ios_keymap_get_entries_for_keyval (GdkKeymap *keymap, guint keyval, GArray *array)
++{
++  GdkKeymapKey key = { .keycode = keyval, .group = 0, .level = 0 };
++  g_array_append_val (array, key);
++  return TRUE;
++}
++
++static gboolean
++gdk_ios_keymap_get_entries_for_keycode (GdkKeymap *keymap, guint hardware_keycode,
++                                        GdkKeymapKey **keys, guint **keyvals, int *n_entries)
++{
++  if (keys)
++    {
++      *keys = g_new (GdkKeymapKey, 1);
++      (*keys)[0] = (GdkKeymapKey){ .keycode = hardware_keycode, .group = 0, .level = 0 };
++    }
++  if (keyvals)
++    {
++      *keyvals = g_new (guint, 1);
++      (*keyvals)[0] = hardware_keycode;
++    }
++  *n_entries = 1;
++  return TRUE;
++}
++
++static guint
++gdk_ios_keymap_lookup_key (GdkKeymap *keymap, const GdkKeymapKey *key)
++{
++  return key->keycode;
++}
++
++static gboolean
++gdk_ios_keymap_translate_keyboard_state (GdkKeymap *keymap, guint hardware_keycode, GdkModifierType state,
++                                         int group, guint *keyval, int *effective_group, int *level,
++                                         GdkModifierType *consumed_modifiers)
++{
++  if (keyval)
++    *keyval = hardware_keycode;
++  if (effective_group)
++    *effective_group = 0;
++  if (level)
++    *level = 0;
++  if (consumed_modifiers)
++    *consumed_modifiers = 0;
++  return hardware_keycode != GDK_KEY_VoidSymbol;
++}
++
++static guint
++gdk_ios_keymap_get_modifier_state (GdkKeymap *keymap)
++{
++  return 0;
++}
++
++static void
++gdk_ios_keymap_class_init (GdkIosKeymapClass *klass)
++{
++  GdkKeymapClass *keymap_class = (GdkKeymapClass *) klass;
++  keymap_class->get_direction = gdk_ios_keymap_get_direction;
++  keymap_class->have_bidi_layouts = gdk_ios_keymap_false;
++  keymap_class->get_caps_lock_state = gdk_ios_keymap_false;
++  keymap_class->get_num_lock_state = gdk_ios_keymap_false;
++  keymap_class->get_scroll_lock_state = gdk_ios_keymap_false;
++  keymap_class->get_entries_for_keyval = gdk_ios_keymap_get_entries_for_keyval;
++  keymap_class->get_entries_for_keycode = gdk_ios_keymap_get_entries_for_keycode;
++  keymap_class->lookup_key = gdk_ios_keymap_lookup_key;
++  keymap_class->translate_keyboard_state = gdk_ios_keymap_translate_keyboard_state;
++  keymap_class->get_modifier_state = gdk_ios_keymap_get_modifier_state;
++}
++
++static void
++gdk_ios_keymap_init (GdkIosKeymap *self)
++{
++}
+diff --git a/gdk/ios/gdkiosseat.h b/gdk/ios/gdkiosseat.h
+new file mode 100644
+index 0000000..ae80bd3
+--- /dev/null
++++ b/gdk/ios/gdkiosseat.h
+@@ -0,0 +1,27 @@
++#pragma once
++
++#include <gdk/gdk.h>
++
++G_BEGIN_DECLS
++
++#define GDK_TYPE_IOS_SEAT (gdk_ios_seat_get_type ())
++#define GDK_IOS_SEAT(o) (G_TYPE_CHECK_INSTANCE_CAST ((o), GDK_TYPE_IOS_SEAT, GdkIosSeat))
++#define GDK_IS_IOS_SEAT(o) (G_TYPE_CHECK_INSTANCE_TYPE ((o), GDK_TYPE_IOS_SEAT))
++
++typedef struct _GdkIosSeat GdkIosSeat;
++typedef struct _GdkIosSeatClass GdkIosSeatClass;
++
++GDK_AVAILABLE_IN_ALL
++GType gdk_ios_seat_get_type (void);
++
++#define GDK_TYPE_IOS_DEVICE (gdk_ios_device_get_type ())
++#define GDK_IOS_DEVICE(o) (G_TYPE_CHECK_INSTANCE_CAST ((o), GDK_TYPE_IOS_DEVICE, GdkIosDevice))
++#define GDK_IS_IOS_DEVICE(o) (G_TYPE_CHECK_INSTANCE_TYPE ((o), GDK_TYPE_IOS_DEVICE))
++
++typedef struct _GdkIosDevice GdkIosDevice;
++typedef struct _GdkIosDeviceClass GdkIosDeviceClass;
++
++GDK_AVAILABLE_IN_ALL
++GType gdk_ios_device_get_type (void);
++
++G_END_DECLS
+diff --git a/gdk/ios/gdkiossurface-private.h b/gdk/ios/gdkiossurface-private.h
+new file mode 100644
+index 0000000..79c214c
+--- /dev/null
++++ b/gdk/ios/gdkiossurface-private.h
+@@ -0,0 +1,63 @@
++#pragma once
++
++#include "gdksurfaceprivate.h"
++
++#include "gdkiossurface.h"
++
++G_BEGIN_DECLS
++
++typedef struct
++{
++  int x;      /* points, relative to the root view */
++  int y;
++  int width;  /* points */
++  int height;
++  double scale;
++} GdkIosSurfaceConfiguration;
++
++struct _GdkIosSurface
++{
++  GdkSurface parent_instance;
++
++  /* GdkIosSurfaceView *, owned; only touched on the main thread */
++  gpointer view;
++
++  gboolean visible;
++  gboolean popup_grab;
++
++  GdkIosSurfaceConfiguration cfg;
++
++  /* the touch that emulates the pointer */
++  gboolean has_emulating;
++  guint emulating_sequence;
++};
++
++struct _GdkIosSurfaceClass
++{
++  GdkSurfaceClass parent_class;
++
++  void (*on_layout) (GdkIosSurface *self);
++  void (*reposition) (GdkIosSurface *self);
++};
++
++typedef struct _GdkIosToplevel GdkIosToplevel;
++GdkIosToplevel *gdk_ios_surface_get_toplevel (GdkIosSurface *self);
++
++/* GTK thread: the view told us its new geometry. */
++void gdk_ios_surface_on_layout (GdkIosSurface *self, int x, int y, int width, int height, double scale);
++
++/* GTK thread helpers that hop to the main thread as needed. */
++void gdk_ios_surface_ensure_view (GdkIosSurface *self);
++void gdk_ios_surface_attach (GdkIosSurface *self, GdkIosSurface *parent_or_null, const GdkRectangle *frame_points);
++void gdk_ios_surface_set_visible (GdkIosSurface *self, gboolean visible);
++void gdk_ios_surface_handle_map (GdkIosSurface *self);
++
++#ifdef __OBJC__
++#import <UIKit/UIKit.h>
++
++@interface GdkIosSurfaceView : UIView
++@property (nonatomic, assign) GdkIosSurface *gdkSurface;
++@end
++#endif
++
++G_END_DECLS
+diff --git a/gdk/ios/gdkiossurface.c b/gdk/ios/gdkiossurface.c
+new file mode 100644
+index 0000000..d7e65fa
+--- /dev/null
++++ b/gdk/ios/gdkiossurface.c
+@@ -0,0 +1,396 @@
++/* GDK iOS backend: GdkSurface backed by a UIView. SPDX-License-Identifier: LGPL-2.1-or-later */
++
++#include "config.h"
++
++#import <UIKit/UIKit.h>
++#import <QuartzCore/QuartzCore.h>
++
++#include <math.h>
++
++#include "gdkframeclockidleprivate.h"
++#include "gdkframeclockprivate.h"
++
++#include "gdkiosruntime-private.h"
++#include "gdkiosdisplay-private.h"
++#include "gdkiosseat-private.h"
++#include "gdkiosevents-private.h"
++#include "gdkiostoplevel-private.h"
++
++#include "gdkiossurface-private.h"
++
++/* ── the view (main thread) ─────────────────────────────────────────── */
++
++typedef struct
++{
++  GdkIosSurface *surface;
++  int x, y, width, height;
++  double scale;
++} GdkIosLayout;
++
++static gboolean
++gdk_ios_surface_layout_idle (gpointer data)
++{
++  GdkIosLayout *layout = data;
++  if (!GDK_SURFACE_DESTROYED ((GdkSurface *) layout->surface))
++    gdk_ios_surface_on_layout (layout->surface, layout->x, layout->y, layout->width, layout->height, layout->scale);
++  return G_SOURCE_REMOVE;
++}
++
++static void
++gdk_ios_surface_layout_free (gpointer data)
++{
++  GdkIosLayout *layout = data;
++  g_object_unref (layout->surface);
++  g_free (layout);
++}
++
++@implementation GdkIosSurfaceView
++
++- (instancetype)initWithFrame:(CGRect)frame
++{
++  self = [super initWithFrame:frame];
++  if (self)
++    {
++      self.multipleTouchEnabled = YES;
++      self.userInteractionEnabled = YES;
++      self.opaque = NO;
++      self.layer.contentsGravity = kCAGravityTopLeft;
++    }
++  return self;
++}
++
++- (void)layoutSubviews
++{
++  [super layoutSubviews];
++  if (self.gdkSurface == NULL)
++    return;
++  CGRect frame = self.frame;
++  GdkIosLayout *layout = g_new0 (GdkIosLayout, 1);
++  layout->surface = g_object_ref (self.gdkSurface);
++  layout->x = (int) floor (frame.origin.x);
++  layout->y = (int) floor (frame.origin.y);
++  layout->width = (int) ceil (frame.size.width);
++  layout->height = (int) ceil (frame.size.height);
++  layout->scale = self.window != nil ? self.window.screen.scale : [UIScreen mainScreen].scale;
++  gdk_ios_post_to_gtk (gdk_ios_surface_layout_idle, layout, gdk_ios_surface_layout_free);
++}
++
++- (void)forwardTouches:(NSSet<UITouch *> *)touches type:(GdkEventType)type
++{
++  if (self.gdkSurface == NULL)
++    return;
++  for (UITouch *touch in touches)
++    {
++      CGPoint p = [touch locationInView:self];
++      guint sequence = (guint) (((uintptr_t) touch) >> 4);
++      gdk_ios_events_post_touch (self.gdkSurface, type, sequence, p.x, p.y,
++                                 (guint32) (touch.timestamp * 1000.0));
++    }
++}
++
++- (void)touchesBegan:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event
++{
++  [self forwardTouches:touches type:GDK_TOUCH_BEGIN];
++}
++
++- (void)touchesMoved:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event
++{
++  [self forwardTouches:touches type:GDK_TOUCH_UPDATE];
++}
++
++- (void)touchesEnded:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event
++{
++  [self forwardTouches:touches type:GDK_TOUCH_END];
++}
++
++- (void)touchesCancelled:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event
++{
++  [self forwardTouches:touches type:GDK_TOUCH_CANCEL];
++}
++
++@end
++
++/* ── the surface (GTK thread) ───────────────────────────────────────── */
++
++G_DEFINE_TYPE (GdkIosSurface, gdk_ios_surface, GDK_TYPE_SURFACE)
++
++static void
++gdk_ios_surface_reposition_children (GdkIosSurface *self)
++{
++  for (const GList *iter = GDK_SURFACE (self)->children; iter != NULL; iter = iter->next)
++    {
++      GdkIosSurface *child = iter->data;
++      GdkIosSurfaceClass *klass = GDK_IOS_SURFACE_GET_CLASS (child);
++      if (klass->reposition)
++        klass->reposition (child);
++    }
++}
++
++void
++gdk_ios_surface_on_layout (GdkIosSurface *self, int x, int y, int width, int height, double scale)
++{
++  GdkSurface *surface = (GdkSurface *) self;
++
++  if (self->cfg.x == x && self->cfg.y == y && self->cfg.width == width &&
++      self->cfg.height == height && self->cfg.scale == scale)
++    return;
++
++  self->cfg.x = x;
++  self->cfg.y = y;
++  self->cfg.width = width;
++  self->cfg.height = height;
++  self->cfg.scale = scale;
++
++  g_debug ("iOS surface %p [%s]: %dx%d at (%d|%d) @%.1f", self, G_OBJECT_TYPE_NAME (self),
++           width, height, x, y, scale);
++
++  surface->width = width;
++  surface->height = height;
++  surface->x = x;
++  surface->y = y;
++
++  GdkIosSurfaceClass *klass = GDK_IOS_SURFACE_GET_CLASS (self);
++  if (klass->on_layout)
++    klass->on_layout (self);
++
++  _gdk_surface_update_size (surface);
++  gdk_ios_surface_reposition_children (self);
++  gdk_surface_invalidate_rect (surface, NULL);
++  gdk_surface_request_layout (surface);
++}
++
++void
++gdk_ios_surface_ensure_view (GdkIosSurface *self)
++{
++  if (self->view != NULL)
++    return;
++  __block GdkIosSurfaceView *view = nil;
++  gdk_ios_run_on_main_sync (^{
++    view = [[GdkIosSurfaceView alloc] initWithFrame:CGRectZero];
++    view.gdkSurface = self;
++    view.hidden = YES;
++  });
++  self->view = view;
++}
++
++/*
++ * Puts the view into the root view (toplevels, @frame_points NULL: fill
++ * the root) or into @parent's view at @frame_points, shows it, and
++ * records the resulting geometry in cfg.
++ */
++void
++gdk_ios_surface_attach (GdkIosSurface *self, GdkIosSurface *parent, const GdkRectangle *frame_points)
++{
++  gdk_ios_surface_ensure_view (self);
++  GdkIosSurfaceView *view = (GdkIosSurfaceView *) self->view;
++  UIView *parent_view = parent != NULL ? (UIView *) parent->view : nil;
++  GdkRectangle frame = frame_points != NULL ? *frame_points : (GdkRectangle){ 0, 0, 0, 0 };
++  __block GdkIosLayout result = { 0 };
++
++  gdk_ios_run_on_main_sync (^{
++    UIView *container = parent_view != nil ? parent_view : (UIView *) gdk_ios_runtime_get_root_view ();
++    if (view.superview != container)
++      {
++        [view removeFromSuperview];
++        [container addSubview:view];
++      }
++    if (frame_points == NULL)
++      {
++        view.frame = container.bounds;
++        view.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
++      }
++    else
++      {
++        view.frame = CGRectMake (frame.x, frame.y, frame.width, frame.height);
++        view.autoresizingMask = UIViewAutoresizingNone;
++      }
++    [container bringSubviewToFront:view];
++    view.hidden = NO;
++    CGRect f = view.frame;
++    result.x = (int) floor (f.origin.x);
++    result.y = (int) floor (f.origin.y);
++    result.width = (int) ceil (f.size.width);
++    result.height = (int) ceil (f.size.height);
++    result.scale = container.window != nil ? container.window.screen.scale : [UIScreen mainScreen].scale;
++  });
++
++  int root_x = result.x + (parent != NULL ? parent->cfg.x : 0);
++  int root_y = result.y + (parent != NULL ? parent->cfg.y : 0);
++  gdk_ios_surface_on_layout (self, root_x, root_y, result.width, result.height, result.scale);
++}
++
++void
++gdk_ios_surface_set_visible (GdkIosSurface *self, gboolean visible)
++{
++  if (self->view == NULL)
++    return;
++  UIView *view = (UIView *) self->view;
++  gdk_ios_run_on_main_async (^{
++    view.hidden = !visible;
++  });
++}
++
++void
++gdk_ios_surface_handle_map (GdkIosSurface *self)
++{
++  GdkSurface *surface = (GdkSurface *) self;
++  GdkIosDisplay *display = (GdkIosDisplay *) gdk_surface_get_display (surface);
++
++  gdk_surface_set_is_mapped (surface, TRUE);
++
++  if (surface->autohide)
++    {
++      gdk_seat_grab ((GdkSeat *) display->seat, surface);
++      self->popup_grab = TRUE;
++    }
++}
++
++static void
++gdk_ios_surface_finalize (GObject *object)
++{
++  GdkIosSurface *self = (GdkIosSurface *) object;
++  if (self->view != NULL)
++    {
++      UIView *view = (UIView *) self->view;
++      self->view = NULL;
++      gdk_ios_run_on_main_async (^{
++        [view removeFromSuperview];
++        [view release];
++      });
++    }
++  G_OBJECT_CLASS (gdk_ios_surface_parent_class)->finalize (object);
++}
++
++static void
++gdk_ios_surface_constructed (GObject *object)
++{
++  GdkIosSurface *self = (GdkIosSurface *) object;
++  GdkSurface *surface = (GdkSurface *) self;
++
++  GdkFrameClock *frame_clock = _gdk_frame_clock_idle_new ();
++  gdk_surface_set_frame_clock (surface, frame_clock);
++  g_object_unref (frame_clock);
++
++  G_OBJECT_CLASS (gdk_ios_surface_parent_class)->constructed (object);
++}
++
++static void
++gdk_ios_surface_hide (GdkSurface *surface)
++{
++  GdkIosSurface *self = (GdkIosSurface *) surface;
++
++  self->visible = FALSE;
++
++  if (surface->autohide && self->popup_grab)
++    {
++      GdkSeat *seat = gdk_display_get_default_seat (surface->display);
++      gdk_seat_ungrab (seat, surface);
++      self->popup_grab = FALSE;
++    }
++
++  gdk_ios_surface_set_visible (self, FALSE);
++  gdk_surface_set_is_mapped (surface, FALSE);
++}
++
++static void
++gdk_ios_surface_get_geometry (GdkSurface *surface, int *x, int *y, int *width, int *height)
++{
++  GdkSurface *parent = surface->parent;
++  *x = surface->x - (parent ? parent->x : 0);
++  *y = surface->y - (parent ? parent->y : 0);
++  *width = surface->width;
++  *height = surface->height;
++}
++
++static void
++gdk_ios_surface_get_root_coords (GdkSurface *surface, int x, int y, int *root_x, int *root_y)
++{
++  *root_x = x + surface->x;
++  *root_y = y + surface->y;
++}
++
++static gboolean
++gdk_ios_surface_get_device_state (GdkSurface *surface, GdkDevice *device,
++                                  double *x, double *y, GdkModifierType *mask)
++{
++  return gdk_device_get_surface_at_position (device, x, y) == surface;
++}
++
++static void
++gdk_ios_surface_set_input_region (GdkSurface *surface, cairo_region_t *shape_region)
++{
++}
++
++static void
++gdk_ios_surface_destroy (GdkSurface *surface, gboolean foreign_destroy)
++{
++  GdkIosSurface *self = (GdkIosSurface *) surface;
++  GdkIosDisplay *display = (GdkIosDisplay *) gdk_surface_get_display (surface);
++
++  g_debug ("iOS surface %p destroy", self);
++
++  if (display != NULL && display->seat != NULL)
++    {
++      gdk_ios_device_forget_surface ((GdkIosDevice *) display->seat->logical_pointer, self);
++      gdk_ios_device_forget_surface ((GdkIosDevice *) display->seat->logical_keyboard, self);
++      if (display->seat->grab_surface == self)
++        gdk_seat_ungrab ((GdkSeat *) display->seat, surface);
++    }
++
++  if (self->view != NULL)
++    {
++      GdkIosSurfaceView *view = (GdkIosSurfaceView *) self->view;
++      self->view = NULL;
++      gdk_ios_run_on_main_sync (^{
++        view.gdkSurface = NULL;
++        [view removeFromSuperview];
++        [view release];
++      });
++    }
++}
++
++static double
++gdk_ios_surface_get_scale (GdkSurface *surface)
++{
++  return ((GdkIosSurface *) surface)->cfg.scale;
++}
++
++static gboolean
++gdk_ios_surface_compute_size (GdkSurface *surface)
++{
++  return FALSE;
++}
++
++static void
++gdk_ios_surface_class_init (GdkIosSurfaceClass *klass)
++{
++  GObjectClass *object_class = G_OBJECT_CLASS (klass);
++  GdkSurfaceClass *surface_class = GDK_SURFACE_CLASS (klass);
++
++  object_class->finalize = gdk_ios_surface_finalize;
++  object_class->constructed = gdk_ios_surface_constructed;
++
++  surface_class->hide = gdk_ios_surface_hide;
++  surface_class->get_geometry = gdk_ios_surface_get_geometry;
++  surface_class->get_root_coords = gdk_ios_surface_get_root_coords;
++  surface_class->get_device_state = gdk_ios_surface_get_device_state;
++  surface_class->set_input_region = gdk_ios_surface_set_input_region;
++  surface_class->destroy = gdk_ios_surface_destroy;
++  surface_class->get_scale = gdk_ios_surface_get_scale;
++  surface_class->compute_size = gdk_ios_surface_compute_size;
++}
++
++static void
++gdk_ios_surface_init (GdkIosSurface *self)
++{
++  self->cfg = (GdkIosSurfaceConfiguration){ .x = 0, .y = 0, .width = 0, .height = 0, .scale = 1.0 };
++}
++
++GdkIosToplevel *
++gdk_ios_surface_get_toplevel (GdkIosSurface *self)
++{
++  GdkSurface *surface = (GdkSurface *) self;
++  if (surface->parent)
++    return gdk_ios_surface_get_toplevel (GDK_IOS_SURFACE (surface->parent));
++  return GDK_IOS_TOPLEVEL (self);
++}
+diff --git a/gdk/ios/gdkiossurface.h b/gdk/ios/gdkiossurface.h
+new file mode 100644
+index 0000000..697d576
+--- /dev/null
++++ b/gdk/ios/gdkiossurface.h
+@@ -0,0 +1,19 @@
++#pragma once
++
++#include <gdk/gdk.h>
++
++G_BEGIN_DECLS
++
++#define GDK_TYPE_IOS_SURFACE (gdk_ios_surface_get_type ())
++#define GDK_IOS_SURFACE(o) (G_TYPE_CHECK_INSTANCE_CAST ((o), GDK_TYPE_IOS_SURFACE, GdkIosSurface))
++#define GDK_IOS_SURFACE_CLASS(k) (G_TYPE_CHECK_CLASS_CAST ((k), GDK_TYPE_IOS_SURFACE, GdkIosSurfaceClass))
++#define GDK_IS_IOS_SURFACE(o) (G_TYPE_CHECK_INSTANCE_TYPE ((o), GDK_TYPE_IOS_SURFACE))
++#define GDK_IOS_SURFACE_GET_CLASS(o) (G_TYPE_INSTANCE_GET_CLASS ((o), GDK_TYPE_IOS_SURFACE, GdkIosSurfaceClass))
++
++typedef struct _GdkIosSurface GdkIosSurface;
++typedef struct _GdkIosSurfaceClass GdkIosSurfaceClass;
++
++GDK_AVAILABLE_IN_ALL
++GType gdk_ios_surface_get_type (void);
++
++G_END_DECLS
+diff --git a/gdk/ios/gdkiostoplevel-private.h b/gdk/ios/gdkiostoplevel-private.h
+new file mode 100644
+index 0000000..85d655f
+--- /dev/null
++++ b/gdk/ios/gdkiostoplevel-private.h
+@@ -0,0 +1,23 @@
++#pragma once
++
++#include "gdktoplevelprivate.h"
++
++#include "gdkiossurface-private.h"
++#include "gdkiostoplevel.h"
++
++G_BEGIN_DECLS
++
++struct _GdkIosToplevel
++{
++  GdkIosSurface parent_instance;
++
++  char *title;
++  GdkToplevelLayout *layout;
++};
++
++struct _GdkIosToplevelClass
++{
++  GdkIosSurfaceClass parent_class;
++};
++
++G_END_DECLS
+diff --git a/gdk/ios/gdkiostoplevel.c b/gdk/ios/gdkiostoplevel.c
+new file mode 100644
+index 0000000..15dc69b
+--- /dev/null
++++ b/gdk/ios/gdkiostoplevel.c
+@@ -0,0 +1,231 @@
++/* GDK iOS backend: GdkToplevel. SPDX-License-Identifier: LGPL-2.1-or-later */
++
++#include "config.h"
++
++#include <math.h>
++
++#include "gdktoplevellayout.h"
++#include "gdkdisplayprivate.h"
++#include "gdkeventsprivate.h"
++
++#include "gdkiosruntime-private.h"
++#include "gdkiosdisplay-private.h"
++#include "gdkiosseat-private.h"
++
++#include "gdkiostoplevel-private.h"
++
++static void
++gdk_ios_toplevel_present (GdkToplevel *toplevel, GdkToplevelLayout *layout)
++{
++  GdkIosToplevel *self = GDK_IOS_TOPLEVEL (toplevel);
++  GdkIosSurface *impl = (GdkIosSurface *) self;
++  GdkSurface *surface = (GdkSurface *) self;
++  GdkIosDisplay *display = (GdkIosDisplay *) gdk_surface_get_display (surface);
++
++  impl->visible = TRUE;
++
++  if (layout != self->layout)
++    {
++      g_clear_pointer (&self->layout, gdk_toplevel_layout_unref);
++      self->layout = gdk_toplevel_layout_copy (layout);
++    }
++
++  g_debug ("iOS toplevel present %p (mapped %d)", self, GDK_SURFACE_IS_MAPPED (surface));
++
++  gdk_ios_surface_attach (impl, NULL, NULL);
++
++  if (!GDK_SURFACE_IS_MAPPED (surface))
++    {
++      gdk_ios_surface_handle_map (impl);
++      gdk_synthesize_surface_state (surface, 0, GDK_TOPLEVEL_STATE_MAXIMIZED | GDK_TOPLEVEL_STATE_FOCUSED);
++      gdk_ios_device_keyboard_maybe_update_surface_focus ((GdkIosDevice *) display->seat->logical_keyboard, impl);
++    }
++}
++
++static gboolean
++gdk_ios_toplevel_minimize (GdkToplevel *toplevel)
++{
++  return FALSE;
++}
++
++static gboolean
++gdk_ios_toplevel_lower (GdkToplevel *toplevel)
++{
++  return FALSE;
++}
++
++static void
++gdk_ios_toplevel_focus (GdkToplevel *toplevel, guint32 timestamp)
++{
++}
++
++static void
++gdk_ios_toplevel_begin_resize (GdkToplevel *toplevel, GdkSurfaceEdge edge, GdkDevice *device,
++                               int button, double x, double y, guint32 timestamp)
++{
++}
++
++static void
++gdk_ios_toplevel_begin_move (GdkToplevel *toplevel, GdkDevice *device, int button,
++                             double x, double y, guint32 timestamp)
++{
++}
++
++static void
++gdk_ios_toplevel_iface_init (GdkToplevelInterface *iface)
++{
++  iface->present = gdk_ios_toplevel_present;
++  iface->minimize = gdk_ios_toplevel_minimize;
++  iface->lower = gdk_ios_toplevel_lower;
++  iface->focus = gdk_ios_toplevel_focus;
++  iface->begin_resize = gdk_ios_toplevel_begin_resize;
++  iface->begin_move = gdk_ios_toplevel_begin_move;
++}
++
++G_DEFINE_TYPE_WITH_CODE (GdkIosToplevel, gdk_ios_toplevel, GDK_TYPE_IOS_SURFACE,
++                         G_IMPLEMENT_INTERFACE (GDK_TYPE_TOPLEVEL, gdk_ios_toplevel_iface_init))
++
++enum
++{
++  N_PROPERTIES = 1,
++};
++
++static void
++gdk_ios_toplevel_finalize (GObject *object)
++{
++  GdkIosToplevel *self = (GdkIosToplevel *) object;
++  g_clear_pointer (&self->title, g_free);
++  g_clear_pointer (&self->layout, gdk_toplevel_layout_unref);
++  G_OBJECT_CLASS (gdk_ios_toplevel_parent_class)->finalize (object);
++}
++
++static void
++gdk_ios_toplevel_get_property (GObject *object, guint prop_id, GValue *value, GParamSpec *pspec)
++{
++  GdkIosToplevel *self = GDK_IOS_TOPLEVEL (object);
++  GdkSurface *surface = (GdkSurface *) self;
++
++  switch (prop_id)
++    {
++    case N_PROPERTIES + GDK_TOPLEVEL_PROP_STATE:
++      g_value_set_flags (value, surface->state);
++      break;
++    case N_PROPERTIES + GDK_TOPLEVEL_PROP_TITLE:
++      g_value_set_string (value, self->title);
++      break;
++    case N_PROPERTIES + GDK_TOPLEVEL_PROP_STARTUP_ID:
++      g_value_set_static_string (value, "");
++      break;
++    case N_PROPERTIES + GDK_TOPLEVEL_PROP_TRANSIENT_FOR:
++      g_value_set_object (value, surface->transient_for);
++      break;
++    case N_PROPERTIES + GDK_TOPLEVEL_PROP_MODAL:
++      g_value_set_boolean (value, surface->modal_hint);
++      break;
++    case N_PROPERTIES + GDK_TOPLEVEL_PROP_ICON_LIST:
++      g_value_set_pointer (value, NULL);
++      break;
++    case N_PROPERTIES + GDK_TOPLEVEL_PROP_DECORATED:
++      g_value_set_boolean (value, FALSE);
++      break;
++    case N_PROPERTIES + GDK_TOPLEVEL_PROP_DELETABLE:
++      g_value_set_boolean (value, TRUE);
++      break;
++    case N_PROPERTIES + GDK_TOPLEVEL_PROP_FULLSCREEN_MODE:
++      g_value_set_enum (value, surface->fullscreen_mode);
++      break;
++    case N_PROPERTIES + GDK_TOPLEVEL_PROP_SHORTCUTS_INHIBITED:
++      g_value_set_boolean (value, FALSE);
++      break;
++    case N_PROPERTIES + GDK_TOPLEVEL_PROP_CAPABILITIES:
++      g_value_set_flags (value, 0);
++      break;
++    case N_PROPERTIES + GDK_TOPLEVEL_PROP_GRAVITY:
++      g_value_set_enum (value, GDK_GRAVITY_NORTH_WEST);
++      break;
++    default:
++      G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
++      break;
++    }
++}
++
++static void
++gdk_ios_toplevel_set_property (GObject *object, guint prop_id, const GValue *value, GParamSpec *pspec)
++{
++  GdkIosToplevel *self = GDK_IOS_TOPLEVEL (object);
++  GdkSurface *surface = (GdkSurface *) self;
++
++  switch (prop_id)
++    {
++    case N_PROPERTIES + GDK_TOPLEVEL_PROP_TITLE:
++      g_free (self->title);
++      self->title = g_value_dup_string (value);
++      g_object_notify_by_pspec (object, pspec);
++      break;
++    case N_PROPERTIES + GDK_TOPLEVEL_PROP_STARTUP_ID:
++      break;
++    case N_PROPERTIES + GDK_TOPLEVEL_PROP_TRANSIENT_FOR:
++      g_clear_object (&surface->transient_for);
++      surface->transient_for = g_value_dup_object (value);
++      g_object_notify_by_pspec (object, pspec);
++      break;
++    case N_PROPERTIES + GDK_TOPLEVEL_PROP_MODAL:
++      surface->modal_hint = g_value_get_boolean (value);
++      g_object_notify_by_pspec (object, pspec);
++      break;
++    case N_PROPERTIES + GDK_TOPLEVEL_PROP_ICON_LIST:
++    case N_PROPERTIES + GDK_TOPLEVEL_PROP_DECORATED:
++    case N_PROPERTIES + GDK_TOPLEVEL_PROP_DELETABLE:
++    case N_PROPERTIES + GDK_TOPLEVEL_PROP_SHORTCUTS_INHIBITED:
++    case N_PROPERTIES + GDK_TOPLEVEL_PROP_GRAVITY:
++      break;
++    case N_PROPERTIES + GDK_TOPLEVEL_PROP_FULLSCREEN_MODE:
++      surface->fullscreen_mode = g_value_get_enum (value);
++      g_object_notify_by_pspec (object, pspec);
++      break;
++    default:
++      G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
++      break;
++    }
++}
++
++static gboolean
++gdk_ios_toplevel_compute_size (GdkSurface *surface)
++{
++  GdkIosToplevel *self = GDK_IOS_TOPLEVEL (surface);
++  GdkIosSurface *impl = (GdkIosSurface *) self;
++
++  GdkToplevelSize size;
++  gdk_toplevel_size_init (&size, impl->cfg.width, impl->cfg.height);
++  gdk_toplevel_notify_compute_size ((GdkToplevel *) self, &size);
++
++  return GDK_SURFACE_CLASS (gdk_ios_toplevel_parent_class)->compute_size (surface);
++}
++
++static void
++gdk_ios_toplevel_destroy (GdkSurface *surface, gboolean foreign_destroy)
++{
++  g_clear_object (&surface->transient_for);
++  GDK_SURFACE_CLASS (gdk_ios_toplevel_parent_class)->destroy (surface, foreign_destroy);
++}
++
++static void
++gdk_ios_toplevel_class_init (GdkIosToplevelClass *klass)
++{
++  GObjectClass *object_class = G_OBJECT_CLASS (klass);
++  GdkSurfaceClass *surface_class = GDK_SURFACE_CLASS (klass);
++
++  object_class->finalize = gdk_ios_toplevel_finalize;
++  object_class->get_property = gdk_ios_toplevel_get_property;
++  object_class->set_property = gdk_ios_toplevel_set_property;
++
++  surface_class->compute_size = gdk_ios_toplevel_compute_size;
++  surface_class->destroy = gdk_ios_toplevel_destroy;
++
++  gdk_toplevel_install_properties (object_class, N_PROPERTIES);
++}
++
++static void
++gdk_ios_toplevel_init (GdkIosToplevel *self)
++{
++}
+diff --git a/gdk/ios/gdkiostoplevel.h b/gdk/ios/gdkiostoplevel.h
+new file mode 100644
+index 0000000..7cdaac2
+--- /dev/null
++++ b/gdk/ios/gdkiostoplevel.h
+@@ -0,0 +1,17 @@
++#pragma once
++
++#include <gdk/gdk.h>
++
++G_BEGIN_DECLS
++
++#define GDK_TYPE_IOS_TOPLEVEL (gdk_ios_toplevel_get_type ())
++#define GDK_IOS_TOPLEVEL(o) (G_TYPE_CHECK_INSTANCE_CAST ((o), GDK_TYPE_IOS_TOPLEVEL, GdkIosToplevel))
++#define GDK_IS_IOS_TOPLEVEL(o) (G_TYPE_CHECK_INSTANCE_TYPE ((o), GDK_TYPE_IOS_TOPLEVEL))
++
++typedef struct _GdkIosToplevel GdkIosToplevel;
++typedef struct _GdkIosToplevelClass GdkIosToplevelClass;
++
++GDK_AVAILABLE_IN_ALL
++GType gdk_ios_toplevel_get_type (void);
++
++G_END_DECLS
+diff --git a/gdk/ios/meson.build b/gdk/ios/meson.build
+new file mode 100644
+index 0000000..a0f6ffa
+--- /dev/null
++++ b/gdk/ios/meson.build
+@@ -0,0 +1,37 @@
++gdk_ios_sources = files([
++  'gdkiosruntime.c',
++  'gdkiosdisplay.c',
++  'gdkiosmonitor.c',
++  'gdkiossurface.c',
++  'gdkiostoplevel.c',
++  'gdkiospopup.c',
++  'gdkioscairocontext.c',
++  'gdkiosseat.c',
++  'gdkiosevents.c',
++])
++
++gdk_ios_public_headers = files([
++  'gdkiosdisplay.h',
++  'gdkiosruntime.h',
++  'gdkiossurface.h',
++  'gdkiostoplevel.h',
++  'gdkiospopup.h',
++  'gdkiosseat.h',
++  'gdkiosmonitor.h',
++])
++
++install_headers(gdk_ios_public_headers, 'gdkios.h', subdir: 'gtk-4.0/gdk/ios/')
++
++gdk_ios_deps = [
++  dependency('appleframeworks', modules: ['UIKit', 'Foundation', 'QuartzCore', 'CoreGraphics'])
++]
++
++libgdk_c_args += ['-xobjective-c']
++
++libgdk_ios = static_library('gdk-ios',
++  sources: [ gdk_ios_sources, gdk_gen_headers ],
++  include_directories: [ confinc, gdkinc, ],
++  c_args: [ libgdk_c_args, common_cflags, ],
++  dependencies: [ gdk_deps, gdk_ios_deps, ],
++  gnu_symbol_visibility: symbol_visibility,
++)
+diff --git a/gdk/meson.build b/gdk/meson.build
+index 1391f7d..d0af0a4 100644
+--- a/gdk/meson.build
++++ b/gdk/meson.build
+@@ -188,6 +188,7 @@ gdkconfig_cdata.set('GDK_WINDOWING_WAYLAND', wayland_enabled)
+ gdkconfig_cdata.set('GDK_WINDOWING_WIN32', win32_enabled)
+ gdkconfig_cdata.set('GDK_WINDOWING_BROADWAY', broadway_enabled)
+ gdkconfig_cdata.set('GDK_WINDOWING_MACOS', macos_enabled)
++gdkconfig_cdata.set('GDK_WINDOWING_IOS', ios_enabled)
+ gdkconfig_cdata.set('GDK_RENDERING_CAIRO', true)
+ gdkconfig_cdata.set('GDK_RENDERING_GL', true)
+ gdkconfig_cdata.set('GDK_RENDERING_VULKAN', have_vulkan)
+@@ -276,7 +277,7 @@ libgdk_c_args = [
+ 
+ gdk_backends = []
+ gdk_backends_gen_headers = []  # non-public generated headers
+-foreach backend : ['android', 'broadway', 'wayland', 'win32', 'x11', 'macos']
++foreach backend : ['android', 'broadway', 'wayland', 'win32', 'x11', 'macos', 'ios']
+   if get_variable('@0@_enabled'.format(backend))
+     subdir(backend)
+     gdk_deps += get_variable('gdk_@0@_deps'.format(backend))
+diff --git a/gtk/gtkcolorpicker.c b/gtk/gtkcolorpicker.c
+index a924b6c..57bf197 100644
+--- a/gtk/gtkcolorpicker.c
++++ b/gtk/gtkcolorpicker.c
+@@ -22,7 +22,7 @@
+ #include "gtkcolorpickershellprivate.h"
+ #include "gtkcolorpickerkwinprivate.h"
+ 
+-#ifdef __APPLE__
++#ifdef GDK_WINDOWING_MACOS
+ #include "gtkcolorpickerquartzprivate.h"
+ #endif
+ 
+@@ -69,7 +69,7 @@ gtk_color_picker_new (void)
+     picker = gtk_color_picker_shell_new ();
+   if (!picker)
+     picker = gtk_color_picker_kwin_new ();
+-#elif defined (__APPLE__)
++#elif defined (GDK_WINDOWING_MACOS)
+   if (!picker)
+     picker = gtk_color_picker_quartz_new ();
+ #elif defined (G_OS_WIN32)
+diff --git a/meson.build b/meson.build
+index 49a65a9..11bba40 100644
+--- a/meson.build
++++ b/meson.build
+@@ -118,6 +118,7 @@ broadway_enabled = get_option('broadway-backend')
+ macos_enabled    = get_option('macos-backend')
+ win32_enabled    = get_option('win32-backend')
+ android_enabled  = get_option('android-backend')
++ios_enabled      = get_option('ios-backend')
+ vulkan_enabled   = get_option('vulkan')
+ 
+ os_unix   = false
+@@ -134,7 +135,10 @@ cc = meson.get_compiler('c')
+ # to ensure they are enabled
+ if host_machine.system() == 'darwin'
+ 
+-  if not cc.compiles('''
++  if host_machine.subsystem() != 'macos'
++    # iOS and friends: no macOS SDK check, no AppKit-based backend
++    macos_enabled = false
++  elif not cc.compiles('''
+     #include <Availability.h>
+     #if __MAC_OS_X_VERSION_MIN_REQUIRED < 101500L
+     # error message "Minimal macOS SDK version not met"
+@@ -160,6 +164,7 @@ if os_darwin
+   x11_enabled = false
+ else
+   macos_enabled = false
++  ios_enabled = false
+ endif
+ 
+ if os_win32
+diff --git a/meson.options b/meson.options
+index cb663bd..b9642aa 100644
+--- a/meson.options
++++ b/meson.options
+@@ -29,6 +29,11 @@ option('macos-backend',
+        value: true,
+        description : 'Enable the macOS gdk backend (only when building on macOS)')
+ 
++option('ios-backend',
++       type: 'boolean',
++       value: false,
++       description : 'Enable the iOS gdk backend (UIKit)')
++
+ option('android-backend',
+        type: 'boolean',
+        value: true,
+-- 
+2.54.0
+

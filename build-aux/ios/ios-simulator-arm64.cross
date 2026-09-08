@@ -1,0 +1,34 @@
+# Meson cross file: iOS Simulator, arm64 (Apple Silicon host).
+# Regenerate the SDK path with: xcrun --sdk iphonesimulator --show-sdk-path
+
+[constants]
+sdk = '/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator26.5.sdk'
+target = 'arm64-apple-ios17.0-simulator'
+common = ['-target', target, '-isysroot', sdk]
+
+[binaries]
+c = ['clang'] + common
+cpp = ['clang++'] + common
+objc = ['clang'] + common
+objcpp = ['clang++'] + common
+ar = 'ar'
+strip = 'strip'
+ranlib = 'ranlib'
+pkg-config = 'pkg-config'
+
+[built-in options]
+c_args = ['-fno-common']
+objc_args = ['-fno-common']
+
+[properties]
+needs_exe_wrapper = true
+# keep host (Homebrew) libraries out of the cross build
+pkg_config_libdir = ['/nonexistent']
+
+[host_machine]
+system = 'darwin'
+subsystem = 'ios-simulator'
+kernel = 'xnu'
+cpu_family = 'aarch64'
+cpu = 'aarch64'
+endian = 'little'

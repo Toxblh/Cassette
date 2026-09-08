@@ -1,0 +1,21 @@
+diff --git a/meson.build b/meson.build
+index c8bf16b..2e5d0b2 100644
+--- a/meson.build
++++ b/meson.build
+@@ -829,8 +829,15 @@ if host_system != 'sunos'
+   functions += ['sysinfo']
+ endif
+ 
++# The iOS SDK links some functions its headers do not declare
++ios_undeclared_functions = ['pipe2']
+ foreach f : functions
+-  if cc.has_function(f)
++  if host_system == 'darwin' and subsystem != 'macos' and f in ios_undeclared_functions
++    have_f = false
++  else
++    have_f = cc.has_function(f)
++  endif
++  if have_f
+     define = 'HAVE_' + f.underscorify().to_upper()
+     glib_conf.set(define, 1)
+     glib_conf_prefix = glib_conf_prefix + '#define @0@ 1\n'.format(define)
