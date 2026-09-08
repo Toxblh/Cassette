@@ -153,8 +153,10 @@ namespace Cassette {
             //      });
             //  });
 
-            track_list = new TrackList (scrolled_window.vadjustment);
-            main_box.append (track_list);
+            // The list is the page's scrollable; what the template puts in
+            // the scrolled window (cover, title, buttons) becomes its header.
+            track_list = new TrackList ();
+            track_list.take_over (scrolled_window);
 
             save_button.clicked.connect (() => {
                 start_saving (true);

@@ -158,7 +158,7 @@ public class Cassette.TrackInfo : SidebarChildBin {
 
         if (similar_tracks != null) {
             if (similar_tracks.similar_tracks.size != 0) {
-                var track_list = new TrackList.simple ();
+                var track_list = new SimpleTrackList ();
                 similar_box.append (track_list);
                 track_list.set_tracks_base (similar_tracks.similar_tracks, similar_tracks);
             } else {

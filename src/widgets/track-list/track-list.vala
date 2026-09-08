@@ -21,6 +21,7 @@ using Cassette.Client;
 using Gee;
 
 namespace Cassette {
+
     public enum SortType {
         NAME,
         ARTISTS,
@@ -33,684 +34,600 @@ namespace Cassette {
         DESCENDING
     }
 
-    protected class TrackRowW : Gtk.FlowBoxChild {
+    /** What a row of the list represents. */
+    public enum TrackRowKind {
+        DEFAULT,    // playlist row: like, dislike hidden, options
+        BASE,       // plain row
+        DISLIKED,   // row with the dislike button
+        QUEUE       // queue row with position
+    }
 
+    /** Model item: one track of the list. */
+    public class TrackItem : Object {
         public YaMAPI.Track track_info { get; construct; }
-        public HasTrackList yam_object { get; construct; }
+        public HasTrackList? yam_object { get; construct; }
+        public TrackRowKind kind { get; construct; }
+        public int position { get; construct; }
 
-        public TrackRowW (YaMAPI.Track track_info, HasTrackList yam_object) {
-            Object (track_info: track_info, yam_object: yam_object);
-        }
-
-        /**
-         * Height of a real row, once one has been allocated. Placeholders take
-         * it so that loading and unloading rows never changes the list's
-         * height: a placeholder taller or shorter than the row it stands for
-         * shifts everything below it — the "shaking" list on phones.
-         */
-        public static int known_height = 0;
-
-        /** Tracks with a version line ("Russian ver.") are one text line taller. */
-        public static int known_height_tall = 0;
-
-        public bool is_tall {
-            get {
-                return track_info.version != null && track_info.version != "";
-            }
-        }
-
-        static int height_for (bool tall) {
-            if (tall && known_height_tall > 0) {
-                return known_height_tall;
-            }
-            return known_height;
-        }
-
-        construct {
-            can_focus = false;
-            vexpand = false;
-
-            int h = height_for (is_tall);
-            child = new TrackPlaceholder () {
-                height_request = h > 0 ? h : -1
-            };
-        }
-
-        /** Applies the measured heights to this row's placeholder, if any. */
-        public void refresh_placeholder_height () {
-            int h = height_for (is_tall);
-            if (child is TrackPlaceholder && h > 0 && child.height_request != h) {
-                child.height_request = h;
-            }
-        }
-
-        /** Records this loaded row's height for its class (plain / tall). */
-        public void record_height () {
-            int height = get_height ();
-            if (height <= 0 || child is TrackPlaceholder) {
-                return;
-            }
-            if (is_tall) {
-                known_height_tall = height;
-            } else {
-                known_height = height;
-            }
-        }
-
-        public virtual void load_content () {
-            child = new TrackDefault (track_info, yam_object);
-        }
-
-        public virtual void unload_content () {
-            record_height ();
-            int height = get_height ();
-            child = new TrackPlaceholder () {
-                height_request = height > 0 ? height : (height_for (is_tall) > 0 ? height_for (is_tall) : -1)
-            };
+        public TrackItem (YaMAPI.Track track_info, HasTrackList? yam_object, TrackRowKind kind, int position) {
+            Object (track_info: track_info, yam_object: yam_object, kind: kind, position: position);
         }
     }
 
-    protected class TrackRowBase : TrackRowW {
+    /** Model item: a widget that scrolls with the list (page header, toolbar, footer, empty state). */
+    public class WidgetItem : Object {
+        public Gtk.Widget widget { get; construct; }
 
-        public TrackRowBase (YaMAPI.Track track_info, HasTrackList yam_object) {
-            Object (track_info: track_info, yam_object: yam_object);
-        }
-
-        public override void load_content () {
-            child = new TrackBase (track_info, yam_object);
+        public WidgetItem (Gtk.Widget widget) {
+            Object (widget: widget);
         }
     }
 
-    protected class TrackRowDis : TrackRowW {
+    /**
+     * The track list: a `Gtk.ListView` over a model, so only the visible
+     * rows exist as widgets and scrolling never depends on guessed row
+     * heights (the old placeholder scheme shook the list on phones).
+     *
+     * It is the scrollable of its page: put it straight into the page's
+     * `Gtk.ScrolledWindow`. Whatever the page shows above the tracks goes
+     * into `header_widget`, whatever goes below into `footer_widget`;
+     * both scroll with the rows as items of the same model. Search and
+     * sorting are `Gtk.FilterListModel` / `Gtk.SortListModel` on top of
+     * the tracks.
+     */
+    public class TrackList : Gtk.Widget, Gtk.Scrollable {
 
-        public TrackRowDis (YaMAPI.Track track_info, HasTrackList yam_object) {
-            Object (track_info: track_info, yam_object: yam_object);
+        // GtkListView is final, so the list wraps one and forwards the
+        // scrollable interface to it: pages put a TrackList straight into
+        // their Gtk.ScrolledWindow and it scrolls as a real list view.
+        Gtk.ListView list_view;
+
+        public Gtk.Adjustment hadjustment {
+            get { ensure_list_view (); return list_view.hadjustment; }
+            set construct { ensure_list_view (); list_view.hadjustment = value; }
+        }
+        public Gtk.Adjustment vadjustment {
+            get { ensure_list_view (); return list_view.vadjustment; }
+            set construct { ensure_list_view (); list_view.vadjustment = value; }
+        }
+        public Gtk.ScrollablePolicy hscroll_policy {
+            get { return list_view.hscroll_policy; }
+            set { list_view.hscroll_policy = value; }
+        }
+        public Gtk.ScrollablePolicy vscroll_policy {
+            get { return list_view.vscroll_policy; }
+            set { list_view.vscroll_policy = value; }
         }
 
-        public override void load_content () {
-            child = new TrackDefault.with_dislike_button (track_info, yam_object);
-        }
-    }
-
-    protected class TrackQueueRow : TrackPositionRow {
-
-        public TrackQueueRow (YaMAPI.Track track_info, int position) {
-            Object (track_info: track_info, position: position);
+        public bool get_border (out Gtk.Border border) {
+            return list_view.get_border (out border);
         }
 
-        //  construct {
-        //      var drag_src = new Gtk.DragSource ();
-        //      drag_src.actions = Gdk.DragAction.MOVE;
-
-        //      drag_src.prepare.connect ((source, x, y) => {
-        //          message ("prepare");
-
-        //          return new Gdk.ContentProvider.for_value (position);
-        //      });
-        //      drag_src.drag_begin.connect ((source, drag) => {
-        //          message ("begin");
-
-        //          source.set_icon (new Gtk.Image.from_icon_name ("folder-music-symbolic").paintable, 0, 0);
-        //      });
-        //      drag_src.drag_end.connect ((drag) => {
-        //          message ("end");
-        //      });
-
-        //      add_controller (drag_src);
-        //  }
-
-        public override void load_content () {
-            child = new TrackQueue (track_info, position);
-        }
-    }
-
-    protected class TrackPositionRow : TrackRowW {
-
-        public int position { get; set; }
-
-        public TrackPositionRow (YaMAPI.Track track_info, int position) {
-            Object (track_info: track_info, position: position);
+        static construct {
+            set_layout_manager_type (typeof (Gtk.BinLayout));
         }
 
-        public override void load_content () {
-            //  bin.child = new TrackPosition (track_info);
+        public override void dispose () {
+            if (list_view != null) {
+                list_view.unparent ();
+                list_view = null;
+            }
+            base.dispose ();
         }
-    }
-
-    [GtkTemplate (ui = "/space/rirusha/Cassette/ui/track-list.ui")]
-    public class TrackList : Adw.Bin {
-
-        [GtkChild]
-        unowned Gtk.Box search_box;
-        [GtkChild]
-        unowned Gtk.SearchEntry search_entry;
-        [GtkChild]
-        unowned Gtk.Button sort_direction_button;
-        [GtkChild]
-        unowned Gtk.Button remove_sort_button;
-        [GtkChild]
-        public unowned Gtk.FlowBox track_box;
-        [GtkChild]
-        unowned Adw.StatusPage status_page;
 
         public int length {
             get {
-                return filtered_rows.size;
+                return (int) sort_model.get_n_items ();
             }
         }
-
-        ArrayList<TrackRowW> original_track_rows = new ArrayList<TrackRowW> ();
-        ArrayList<TrackRowW> sorted_rows = new ArrayList<TrackRowW> ();
-        ArrayList<TrackRowW> filtered_rows = new ArrayList<TrackRowW> ();
-        HashSet<int> loaded_rows = new HashSet<int> ();
-
-        private YaMAPI.TrackType track_type = YaMAPI.TrackType.MUSIC;
 
         public SortType? sort_type = null;
         SortDirection sort_direction = SortDirection.ASCENDING;
 
-        public Gtk.Adjustment adjustment { get; construct set; }
+        ListStore store = new ListStore (typeof (TrackItem));
+        Gtk.FilterListModel filter_model;
+        Gtk.SortListModel sort_model;
+        Gtk.CustomFilter filter;
+        Gtk.CustomSorter sorter;
+        ListStore header_store = new ListStore (typeof (WidgetItem));
+        ListStore toolbar_store = new ListStore (typeof (WidgetItem));
+        ListStore empty_store = new ListStore (typeof (WidgetItem));
+        ListStore footer_store = new ListStore (typeof (WidgetItem));
 
+        Gtk.SearchEntry search_entry;
+        Adw.Clamp toolbar;
+        Gtk.Button sort_direction_button;
+        Gtk.Button remove_sort_button;
+        Adw.StatusPage status_page;
+
+        YaMAPI.TrackType track_type = YaMAPI.TrackType.MUSIC;
         bool is_queue = false;
 
-        public TrackList (Gtk.Adjustment adjustment) {
-            Object (adjustment: adjustment);
+        /** Above the tracks (page header). Scrolls with the list. */
+        public Gtk.Widget? header_widget {
+            owned get {
+                return header_store.get_n_items () > 0 ? ((WidgetItem) header_store.get_item (0)).widget : null;
+            }
+            set {
+                header_store.remove_all ();
+                if (value != null) {
+                    header_store.append (new WidgetItem (value));
+                }
+                scroll_to_top ();
+            }
         }
 
-        public TrackList.simple () {
+        /** Below the tracks (albums grid, more sections …). Scrolls with the list. */
+        public Gtk.Widget? footer_widget {
+            owned get {
+                return footer_store.get_n_items () > 0 ? ((WidgetItem) footer_store.get_item (0)).widget : null;
+            }
+            set {
+                footer_store.remove_all ();
+                if (value != null) {
+                    footer_store.append (new WidgetItem (value));
+                }
+            }
+        }
+
+        /** Search entry and sort buttons above the rows. */
+        public bool show_toolbar {
+            get {
+                return toolbar_store.get_n_items () > 0;
+            }
+            set {
+                toolbar_store.remove_all ();
+                if (value) {
+                    toolbar_store.append (new WidgetItem (toolbar));
+                }
+                scroll_to_top ();
+            }
+        }
+
+        /** Rows narrower than this get side margins like the pages' clamps. */
+        public int row_maximum_size { get; set; default = 1000; }
+
+        /**
+         * Becomes the content of @scrolled_window: whatever it held so far
+         * (a template's page header) turns into the list's header item.
+         */
+        public void take_over (Gtk.ScrolledWindow scrolled_window) {
+            var content = scrolled_window.child;
+            if (content is Gtk.Viewport) {
+                var viewport = (Gtk.Viewport) content;
+                content = viewport.child;
+                viewport.child = null;
+            }
+            scrolled_window.child = null;
+            header_widget = content;
+            scrolled_window.child = this;
+        }
+
+        // Gtk.ListView keeps the first visible item in place when items are
+        // inserted before it, so adding a header would hide it above the
+        // toolbar. Pin the view to the top after changing the leading items.
+        void scroll_to_top () {
+            list_view.scroll_to (0, Gtk.ListScrollFlags.NONE, null);
+        }
+
+        public TrackList () {
             Object ();
-            search_box.visible = false;
+        }
+
+        void ensure_list_view () {
+            if (list_view == null) {
+                list_view = new Gtk.ListView (null, null) {
+                    single_click_activate = true
+                };
+                list_view.add_css_class ("track-list");
+                list_view.set_parent (this);
+            }
         }
 
         construct {
-            track_box.bind_property ("visible", status_page, "visible", GLib.BindingFlags.INVERT_BOOLEAN);
+            ensure_list_view ();
 
-            if (adjustment != null) {
-                adjustment.changed.connect (load_chunk);
-                adjustment.value_changed.connect (load_chunk);
+            build_toolbar ();
+            status_page = new Adw.StatusPage () {
+                icon_name = "emblem-music-symbolic",
+                title = _("Nothing here"),
+                vexpand = false
+            };
+            status_page.add_css_class ("compact");
 
-                map.connect (load_chunk);
-                unmap.connect (unload_all);
+            filter = new Gtk.CustomFilter (match_item);
+            filter_model = new Gtk.FilterListModel (store, filter);
+            sorter = new Gtk.CustomSorter ((a, b) => compare_items ((Object) a, (Object) b));
+            sort_model = new Gtk.SortListModel (filter_model, null);
 
-                search_entry.search_changed.connect (() => {
-                    filter ();
-                    loaded_rows.clear ();
-                });
+            var sections = new ListStore (typeof (ListModel));
+            sections.append (header_store);
+            sections.append (toolbar_store);
+            sections.append (empty_store);
+            sections.append (sort_model);
+            sections.append (footer_store);
+            var flat = new Gtk.FlattenListModel (sections);
 
-                Cassette.settings.changed.connect ((key) => {
-                    if (key == "explicit-visible" || key == "child-visible" || key == "available-visible") {
-                        search_entry.search_changed ();
-                    }
-                });
+            list_view.model = new Gtk.NoSelection (flat);
+            list_view.factory = build_factory ();
 
-                var actions = new SimpleActionGroup ();
+            show_toolbar = true;
 
-                var sort_name_action = new SimpleAction ("sort-name", null);
-                sort_name_action.activate.connect (() => {
-                    sort_type = SortType.NAME;
-                    sort ();
-                });
-                actions.add_action (sort_name_action);
+            sort_model.items_changed.connect (() => {
+                update_empty_state ();
+            });
+            update_empty_state ();
 
-                var sort_artists_action = new SimpleAction ("sort-artists", null);
-                sort_artists_action.activate.connect (() => {
-                    sort_type = SortType.ARTISTS;
-                    sort ();
-                });
-                actions.add_action (sort_artists_action);
+            search_entry.search_changed.connect (() => {
+                filter.changed (Gtk.FilterChange.DIFFERENT);
+            });
+            Cassette.settings.changed.connect ((key) => {
+                if (key == "explicit-visible" || key == "child-visible" || key == "available-visible") {
+                    filter.changed (Gtk.FilterChange.DIFFERENT);
+                }
+            });
 
-                var sort_album_action = new SimpleAction ("sort-album", null);
-                sort_album_action.activate.connect (() => {
-                    sort_type = SortType.ALBUM;
-                    sort ();
-                });
-                actions.add_action (sort_album_action);
-
-                var sort_duration_action = new SimpleAction ("sort-duration", null);
-                sort_duration_action.activate.connect (() => {
-                    sort_type = SortType.DURATION;
-                    sort ();
-                });
-                actions.add_action (sort_duration_action);
-
-                insert_action_group ("tracklist", actions);
-
-                sort_direction_button.clicked.connect (() => {
-                    switch (sort_direction) {
-                        case SortDirection.ASCENDING:
-                            sort_direction = SortDirection.DESCENDING;
-                            sort_direction_button.icon_name = "view-sort-descending-symbolic";
-                            break;
-                        case SortDirection.DESCENDING:
-                            sort_direction = SortDirection.ASCENDING;
-                            sort_direction_button.icon_name = "view-sort-ascending-symbolic";
-                            break;
-                    }
-                    sort ();
-                });
-
-                remove_sort_button.clicked.connect (() => {
-                    sort_type = null;
-                    sort ();
-                });
-            }
-
-            track_box.child_activated.connect ((row) => {
-                ((TrackRow) ((TrackRowW) row).child).trigger ();
-                //  application.main_window.window_sidebar.show_track_info (((TrackRow) row).track_info);
+            list_view.activate.connect ((position) => {
+                var item = list_view.model.get_item (position) as TrackItem;
+                if (item == null) {
+                    return;
+                }
+                // The row widget belongs to the list item; find it through
+                // the focus-less path: the model position is stable, the
+                // widget is not — rebuild the queue from the item instead.
+                var row = row_widget_for (position);
+                if (row != null) {
+                    row.trigger ();
+                }
             });
         }
 
-        public void move_to (int position, int max) {
-            if (adjustment.upper > 0) {
-                adjustment.set_value (adjustment.upper / max * position - adjustment.upper / max * 4.5);
+        // ── toolbar ─────────────────────────────────────────────────────
+
+        void build_toolbar () {
+            var box = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 8) {
+                margin_top = 8,
+                margin_bottom = 4
+            };
+            toolbar = new Adw.Clamp () {
+                maximum_size = row_maximum_size,
+                margin_start = 12,
+                margin_end = 12,
+                child = box
+            };
+            var toolbar = box;
+
+            search_entry = new Gtk.SearchEntry () {
+                hexpand = true,
+                placeholder_text = _("Search track")
+            };
+            search_entry.add_css_class ("transparent-background");
+            toolbar.append (search_entry);
+
+            var sort_label = new Gtk.Label (_("Sort by"));
+            sort_label.add_css_class ("dim-label");
+            toolbar.append (sort_label);
+
+            var buttons = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 1);
+            toolbar.append (buttons);
+
+            var menu = new Menu ();
+            menu.append (_("name"), "tracklist.sort-name");
+            menu.append (_("artist"), "tracklist.sort-artists");
+            menu.append (_("album"), "tracklist.sort-album");
+            menu.append (_("duration"), "tracklist.sort-duration");
+            var sort_button = new Gtk.MenuButton () {
+                icon_name = "pan-down-symbolic",
+                menu_model = menu
+            };
+            sort_button.add_css_class ("flat");
+            buttons.append (sort_button);
+
+            sort_direction_button = new Gtk.Button.from_icon_name ("view-sort-ascending-symbolic");
+            sort_direction_button.add_css_class ("flat");
+            buttons.append (sort_direction_button);
+
+            remove_sort_button = new Gtk.Button.from_icon_name ("window-close-symbolic") {
+                visible = false
+            };
+            remove_sort_button.add_css_class ("flat");
+            buttons.append (remove_sort_button);
+
+            var actions = new SimpleActionGroup ();
+            string[] names = { "sort-name", "sort-artists", "sort-album", "sort-duration" };
+            SortType[] types = { SortType.NAME, SortType.ARTISTS, SortType.ALBUM, SortType.DURATION };
+            for (int i = 0; i < names.length; i++) {
+                var type = types[i];
+                var action = new SimpleAction (names[i], null);
+                action.activate.connect (() => {
+                    sort_type = type;
+                    apply_sort ();
+                });
+                actions.add_action (action);
             }
-            load_chunk ();
+            insert_action_group ("tracklist", actions);
+
+            sort_direction_button.clicked.connect (() => {
+                if (sort_direction == SortDirection.ASCENDING) {
+                    sort_direction = SortDirection.DESCENDING;
+                    sort_direction_button.icon_name = "view-sort-descending-symbolic";
+                } else {
+                    sort_direction = SortDirection.ASCENDING;
+                    sort_direction_button.icon_name = "view-sort-ascending-symbolic";
+                }
+                apply_sort ();
+            });
+            remove_sort_button.clicked.connect (() => {
+                sort_type = null;
+                apply_sort ();
+            });
         }
 
-        void filter () {
-            filtered_rows.clear ();
-            foreach (var track_row in sorted_rows) {
-                if (search_entry.text == "") {
-                    bool show_explicit = Cassette.settings.get_boolean ("explicit-visible");
-                    bool show_child = Cassette.settings.get_boolean ("child-visible");
-                    bool is_available = Cassette.settings.get_boolean ("available-visible");
-                    bool track_can_show = track_row.track_info.track_type == track_type &&
-                        (track_row.track_info.available || is_available) &&
-                        (!track_row.track_info.is_explicit || show_explicit) &&
-                        (!track_row.track_info.is_suitable_for_children || show_child);
-                    if (track_can_show || track_row is TrackQueueRow) {
-                        filtered_rows.add (track_row);
-                        track_row.visible = true;
-                    } else {
-                        track_row.visible = false;
-                    }
-                } else if (
-                    (search_entry.text.down () in track_row.track_info.title.down ()) ||
-                    (search_entry.text.down () in track_row.track_info.get_artists_names ().down ())
-                ) {
-                    filtered_rows.add (track_row);
-                    track_row.visible = true;
-                } else {
-                    track_row.visible = false;
-                }
+        // ── filtering and sorting ───────────────────────────────────────
+
+        bool match_item (Object obj) {
+            var item = (TrackItem) obj;
+            var track = item.track_info;
+            if (search_entry.text != "") {
+                var needle = search_entry.text.down ();
+                return needle in (track.title ?? "").down () ||
+                    needle in track.get_artists_names ().down ();
             }
-            if (filtered_rows.size == 0) {
-                track_box.visible = false;
+            if (item.kind == TrackRowKind.QUEUE) {
+                return true;
+            }
+            bool show_explicit = Cassette.settings.get_boolean ("explicit-visible");
+            bool show_child = Cassette.settings.get_boolean ("child-visible");
+            bool show_unavailable = Cassette.settings.get_boolean ("available-visible");
+            return track.track_type == track_type &&
+                (track.available || show_unavailable) &&
+                (!track.is_explicit || show_explicit) &&
+                (!track.is_suitable_for_children || show_child);
+        }
+
+        static int compare_strings (string a, string b) {
+            return strcmp (a.down (), b.down ());
+        }
+
+        int compare_items (Object a_obj, Object b_obj) {
+            var a = ((TrackItem) a_obj).track_info;
+            var b = ((TrackItem) b_obj).track_info;
+            int result = 0;
+            switch (sort_type) {
+                case SortType.NAME:
+                    result = compare_strings (a.title ?? "", b.title ?? "");
+                    break;
+                case SortType.ARTISTS:
+                    if (a.artists.size == 0 || b.artists.size == 0) {
+                        result = (a.artists.size == 0 ? 0 : 1) - (b.artists.size == 0 ? 0 : 1);
+                    } else {
+                        result = compare_strings (a.get_artists_names (), b.get_artists_names ());
+                    }
+                    break;
+                case SortType.ALBUM:
+                    if (a.albums.size == 0 || b.albums.size == 0) {
+                        result = (a.albums.size == 0 ? 0 : 1) - (b.albums.size == 0 ? 0 : 1);
+                    } else {
+                        result = compare_strings (a.albums[0].title ?? "", b.albums[0].title ?? "");
+                    }
+                    break;
+                case SortType.DURATION:
+                    result = (int) (a.duration_ms > b.duration_ms) - (int) (a.duration_ms < b.duration_ms);
+                    break;
+                default:
+                    // No sort type: keep the original order, or reverse it.
+                    result = 0;
+                    break;
+            }
+            return sort_direction == SortDirection.ASCENDING ? result : -result;
+        }
+
+        void apply_sort () {
+            if (sort_type == null) {
+                sort_model.sorter = null;
+                remove_sort_button.visible = false;
+                if (sort_direction == SortDirection.DESCENDING && !is_queue) {
+                    // "Reverse" without a key: the store order, backwards.
+                    reverse_store ();
+                    sort_direction = SortDirection.ASCENDING;
+                    sort_direction_button.icon_name = "view-sort-ascending-symbolic";
+                }
             } else {
-                track_box.visible = true;
+                sort_model.sorter = sorter;
+                sorter.changed (Gtk.SorterChange.DIFFERENT);
+                remove_sort_button.visible = true;
+            }
+            sort_direction_button.visible = !is_queue || sort_type != null;
+        }
+
+        void reverse_store () {
+            var items = new ArrayList<TrackItem> ();
+            for (uint i = 0; i < store.get_n_items (); i++) {
+                items.add ((TrackItem) store.get_item (i));
+            }
+            store.remove_all ();
+            for (int i = items.size - 1; i >= 0; i--) {
+                store.append (items[i]);
             }
         }
 
         public void sort () {
-            remove_all ();
-            if (sort_type == null) {
-                sorted_rows_reset ();
-                if (is_queue) {
-                    sort_direction_button.visible = false;
-                }
-                remove_sort_button.visible = false;
-            } else {
-                switch (sort_type) {
-                    case SortType.NAME:
-                        switch (sort_direction) {
-                            case SortDirection.ASCENDING:
-                                sorted_rows.sort ((row_1, row_2) => {
-                                    if (row_1.track_info.title.down () > row_2.track_info.title.down ()) {
-                                        return 1;
-                                    } else if (row_1.track_info.title.down () < row_2.track_info.title.down ()) {
-                                        return -1;
-                                    }
-                                    return 0;
-                                });
-                                break;
-                            case SortDirection.DESCENDING:
-                                sorted_rows.sort ((row_1, row_2) => {
-                                    if (row_1.track_info.title.down () > row_2.track_info.title.down ()) {
-                                        return -1;
-                                    } else if (row_1.track_info.title.down () < row_2.track_info.title.down ()) {
-                                        return 1;
-                                    }
-                                    return 0;
-                                });
-                                break;
-                        }
-                        break;
-                    case SortType.ARTISTS:
-                        switch (sort_direction) {
-                            case SortDirection.ASCENDING:
-                                sorted_rows.sort ((row_1, row_2) => {
-                                    if (row_1.track_info.artists.size == 0) {
-                                        return -1;
-                                    }
-                                    if (row_2.track_info.artists.size == 0) {
-                                        return 1;
-                                    }
-                                    if (row_1.track_info.get_artists_names () > row_2.track_info.get_artists_names ()) {
-                                        return 1;
-                                    } else if (row_1.track_info.get_artists_names () < row_2.track_info.get_artists_names ()) {
-                                        return -1;
-                                    }
-                                    return 0;
-                                });
-                                break;
-                            case SortDirection.DESCENDING:
-                                sorted_rows.sort ((row_1, row_2) => {
-                                    if (row_1.track_info.artists.size == 0) {
-                                        return 1;
-                                    }
-                                    if (row_2.track_info.artists.size == 0) {
-                                        return -1;
-                                    }
-                                    if (row_1.track_info.get_artists_names () > row_2.track_info.get_artists_names ()) {
-                                        return -1;
-                                    } else if (row_1.track_info.get_artists_names () < row_2.track_info.get_artists_names ()) {
-                                        return 1;
-                                    }
-                                    return 0;
-                                });
-                                break;
-                        }
-                        break;
-                    case SortType.ALBUM:
-                        switch (sort_direction) {
-                            case SortDirection.ASCENDING:
-                                sorted_rows.sort ((row_1, row_2) => {
-                                    if (row_1.track_info.albums.size == 0) {
-                                        return -1;
-                                    }
-                                    if (row_2.track_info.albums.size == 0) {
-                                        return 1;
-                                    }
-                                    if (row_1.track_info.albums[0].title > row_2.track_info.albums[0].title) {
-                                        return 1;
-                                    } else if (row_1.track_info.albums[0].title < row_2.track_info.albums[0].title) {
-                                        return -1;
-                                    }
-                                    return 0;
-                                });
-                                break;
-                            case SortDirection.DESCENDING:
-                                sorted_rows.sort ((row_1, row_2) => {
-                                    if (row_1.track_info.albums.size == 0) {
-                                        return 1;
-                                    }
-                                    if (row_2.track_info.albums.size == 0) {
-                                        return -1;
-                                    }
-                                    if (row_1.track_info.albums[0].title > row_2.track_info.albums[0].title) {
-                                        return -1;
-                                    } else if (row_1.track_info.albums[0].title < row_2.track_info.albums[0].title) {
-                                        return 1;
-                                    }
-                                    return 0;
-                                });
-                                break;
-                        }
-                        break;
-                    case SortType.DURATION:
-                        switch (sort_direction) {
-                            case SortDirection.ASCENDING:
-                                sorted_rows.sort ((row_1, row_2) => {
-                                    if (row_1.track_info.duration_ms > row_2.track_info.duration_ms) {
-                                        return 1;
-                                    } else if (row_1.track_info.duration_ms < row_2.track_info.duration_ms) {
-                                        return -1;
-                                    }
-                                    return 0;
-                                });
-                                break;
-                            case SortDirection.DESCENDING:
-                                sorted_rows.sort ((row_1, row_2) => {
-                                    if (row_1.track_info.duration_ms > row_2.track_info.duration_ms) {
-                                        return -1;
-                                    } else if (row_1.track_info.duration_ms < row_2.track_info.duration_ms) {
-                                        return 1;
-                                    }
-                                    return 0;
-                                });
-                                break;
-                        }
-                        break;
-                }
-                if (is_queue) {
-                    sort_direction_button.visible = true;
-                }
-                remove_sort_button.visible = true;
-            }
-            foreach (var track_row in sorted_rows) {
-                track_box.append (track_row);
-            }
-
-            filter ();
-            loaded_rows.clear ();
-            load_chunk ();
+            apply_sort ();
         }
 
-        void remove_all () {
-            while (track_box.get_last_child () != null) {
-                track_box.remove (track_box.get_last_child ());
+        void update_empty_state () {
+            bool empty = sort_model.get_n_items () == 0 && store.get_n_items () > 0;
+            if (empty && empty_store.get_n_items () == 0) {
+                empty_store.append (new WidgetItem (status_page));
+            } else if (!empty && empty_store.get_n_items () > 0) {
+                empty_store.remove_all ();
             }
         }
 
-        const int LOAD_MARGIN_ROWS = 3;
+        // ── rows ────────────────────────────────────────────────────────
 
-        /**
-         * Top edge of row @index in the scrolled content's coordinates, or
-         * -1 when the rows have not been allocated yet.
-         */
-        double row_top (Gtk.Widget viewport, int index, out double height) {
-            Graphene.Rect bounds;
-            height = 0;
-
-            if (!filtered_rows[index].compute_bounds (viewport, out bounds) || bounds.size.height <= 0) {
-                return -1;
-            }
-
-            height = bounds.size.height;
-            return bounds.origin.y + adjustment.value;
-        }
-
-        void load_chunk () {
-            if (length == 0) {
-                return;
-            }
-
-            int start = -1;
-            int end = -1;
-
-            // The rows sit below the page header inside the same scrolled
-            // window, so the adjustment cannot be mapped to row indexes
-            // proportionally: with a tall header (phones) that estimate runs
-            // ahead and unloads rows that are still on screen. Use the real
-            // row geometry instead; the old estimate stays as a fallback for
-            // the moment before the first allocation.
-            var viewport = track_box.get_ancestor (typeof (Gtk.Viewport));
-            double first_height;
-            if (viewport != null && row_top (viewport, 0, out first_height) >= 0) {
-                double view_top = adjustment.value;
-                double view_bottom = view_top + adjustment.page_size;
-
-                // First row whose bottom edge is below the visible top.
-                int lo = 0;
-                int hi = length - 1;
-                while (lo < hi) {
-                    int mid = (lo + hi) / 2;
-                    double h;
-                    double top = row_top (viewport, mid, out h);
-                    if (top + h <= view_top) {
-                        lo = mid + 1;
-                    } else {
-                        hi = mid;
+        Gtk.ListItemFactory build_factory () {
+            var f = new Gtk.SignalListItemFactory ();
+            f.setup.connect ((obj) => {
+                var list_item = (Gtk.ListItem) obj;
+                list_item.activatable = true;
+                list_item.focusable = false;
+                list_item.child = new Adw.Bin ();
+            });
+            f.bind.connect ((obj) => {
+                var list_item = (Gtk.ListItem) obj;
+                var bin = (Adw.Bin) list_item.child;
+                var item = list_item.item;
+                if (item is WidgetItem) {
+                    var widget = ((WidgetItem) item).widget;
+                    if (widget.parent != null && widget.parent != bin) {
+                        // Still bound to a recycled item that was not unbound yet.
+                        ((Adw.Bin) widget.parent).child = null;
                     }
+                    bin.child = widget;
+                    list_item.activatable = false;
+                } else if (item is TrackItem) {
+                    bin.child = clamp_row (build_row ((TrackItem) item));
+                    list_item.activatable = true;
                 }
+            });
+            f.unbind.connect ((obj) => {
+                var list_item = (Gtk.ListItem) obj;
+                var bin = (Adw.Bin) list_item.child;
+                bin.child = null;
+            });
+            return f;
+        }
 
-                int last = lo;
-                while (last + 1 < length) {
-                    double h;
-                    if (row_top (viewport, last + 1, out h) >= view_bottom) {
-                        break;
-                    }
-                    last++;
-                }
+        Gtk.Widget clamp_row (Gtk.Widget row) {
+            return new Adw.Clamp () {
+                maximum_size = row_maximum_size,
+                child = row
+            };
+        }
 
-                start = int.max (0, lo - LOAD_MARGIN_ROWS);
-                end = int.min (length, last + 1 + LOAD_MARGIN_ROWS);
-            } else {
-                int index = 0;
-                if (adjustment.upper > 0) {
-                    index = (int) (adjustment.value / (adjustment.upper / length));
-                }
-
-                int track_number = application.main_window.get_height () / 80;
-
-                start = int.max (0, index - LOAD_MARGIN_ROWS);
-                end = int.min (length, index + track_number + LOAD_MARGIN_ROWS);
-            }
-
-            var new_loaded_rows = range_set (start, end);
-
-            foreach (int row_id in difference (new_loaded_rows, loaded_rows)) {
-                filtered_rows[row_id].load_content ();
-            }
-
-            foreach (int row_id in difference (loaded_rows, new_loaded_rows)) {
-                filtered_rows[row_id].unload_content ();
-            }
-
-            loaded_rows = new_loaded_rows;
-
-            if (!height_probe_pending) {
-                height_probe_pending = true;
-                // Once the freshly loaded rows are allocated, record their
-                // heights per class and size every placeholder to match.
-                Idle.add_once (() => {
-                    height_probe_pending = false;
-                    int plain_before = TrackRowW.known_height;
-                    int tall_before = TrackRowW.known_height_tall;
-                    foreach (int row_id in loaded_rows) {
-                        filtered_rows[row_id].record_height ();
-                    }
-                    if (plain_before != TrackRowW.known_height || tall_before != TrackRowW.known_height_tall) {
-                        foreach (var row in filtered_rows) {
-                            row.refresh_placeholder_height ();
-                        }
-                    }
-                });
+        Gtk.Widget build_row (TrackItem item) {
+            switch (item.kind) {
+                case TrackRowKind.BASE:
+                    return new TrackBase (item.track_info, item.yam_object);
+                case TrackRowKind.DISLIKED:
+                    return new TrackDefault.with_dislike_button (item.track_info, item.yam_object);
+                case TrackRowKind.QUEUE:
+                    return new TrackQueue (item.track_info, item.position);
+                default:
+                    return new TrackDefault (item.track_info, item.yam_object);
             }
         }
 
-        bool height_probe_pending = false;
-
-        public void unload_all () {
-            foreach (int row_id in loaded_rows) {
-                filtered_rows[row_id].unload_content ();
+        TrackRow? row_widget_for (uint position) {
+            // The list item widgets are children of the list view; find the
+            // one currently showing this position.
+            for (var child = list_view.get_first_child (); child != null; child = child.get_next_sibling ()) {
+                var bin = child.get_first_child () as Adw.Bin;
+                if (bin == null) {
+                    continue;
+                }
+                var clamp = bin.child as Adw.Clamp;
+                var row = clamp != null ? clamp.child as TrackRow : bin.child as TrackRow;
+                if (row == null) {
+                    continue;
+                }
+                var item = list_view.model.get_item (position) as TrackItem;
+                if (item != null && row.track_info == item.track_info) {
+                    return row;
+                }
             }
-            loaded_rows.clear ();
+            return null;
         }
 
-        //  Для простого списка треков
-        public void load_all () {
-            foreach (var track_row in original_track_rows) {
-                track_row.load_content ();
+        // ── public API kept from the old list ───────────────────────────
+
+        /** Scrolls the list so that the row @position is in view. */
+        public void move_to (int position, int max) {
+            uint offset = header_store.get_n_items () + toolbar_store.get_n_items () + empty_store.get_n_items ();
+            if (position >= 0 && position < length) {
+                list_view.scroll_to (offset + position, Gtk.ListScrollFlags.NONE, null);
             }
         }
 
-        // Возвращает true, если списки треков равны, включая порядок.
+        public void unload_all () { }
+
+        public void load_all () { }
+
         public bool compare_tracks (ArrayList<YaMAPI.Track> track_list) {
-            if (track_list.size != original_track_rows.size) {
+            if (track_list.size != store.get_n_items ()) {
                 return false;
             }
             for (int i = 0; i < track_list.size; i++) {
-                if (track_list[i].id != original_track_rows[i].track_info.id) {
+                if (track_list[i].id != ((TrackItem) store.get_item (i)).track_info.id) {
                     return false;
                 }
             }
             return true;
         }
 
-        void preset_actions () {
-            remove_all ();
-            clear_all ();
-        }
-
-        void postset_actions () {
-            sorted_rows_reset ();
-            filter ();
-
-            if (adjustment == null) {
-                load_all ();
+        void set_items (ArrayList<YaMAPI.Track> track_list, HasTrackList? yam_object, TrackRowKind kind) {
+            var items = new Object[track_list.size];
+            for (int i = 0; i < track_list.size; i++) {
+                items[i] = new TrackItem (track_list[i], yam_object, kind, i);
             }
-        }
-
-        void add_row (TrackRowW track_row) {
-            original_track_rows.add (track_row);
-            track_box.append (track_row);
+            store.splice (0, store.get_n_items (), items);
+            update_empty_state ();
         }
 
         public void set_tracks_default (ArrayList<YaMAPI.Track> track_list, YaMAPI.Playlist yam_object) {
-            preset_actions ();
-            foreach (var track_info in track_list) {
-                add_row (new TrackRowW (track_info, yam_object));
-            }
-            postset_actions ();
+            is_queue = false;
+            set_items (track_list, yam_object, TrackRowKind.DEFAULT);
         }
 
         public void set_tracks_base (ArrayList<YaMAPI.Track> track_list, HasTrackList yam_object) {
-            preset_actions ();
-            foreach (var track_info in track_list) {
-                add_row (new TrackRowBase (track_info, yam_object));
-            }
-            postset_actions ();
+            is_queue = false;
+            set_items (track_list, yam_object, TrackRowKind.BASE);
         }
 
         public void set_tracks_disliked (ArrayList<YaMAPI.Track> track_list, HasTrackList yam_object) {
-            preset_actions ();
-            foreach (var track_info in track_list) {
-                add_row (new TrackRowDis (track_info, yam_object));
-            }
-            postset_actions ();
+            is_queue = false;
+            set_items (track_list, yam_object, TrackRowKind.DISLIKED);
         }
 
         public void set_tracks_as_queue (ArrayList<YaMAPI.Track> track_list) {
-            preset_actions ();
-
             is_queue = true;
-            sort_direction_button.visible = false;
-
-            for (int i = 0; i < track_list.size; i++ ) {
-                add_row (new TrackQueueRow (track_list[i], i));
-            }
-
-            postset_actions ();
+            sort_direction_button.visible = sort_type != null;
+            set_items (track_list, null, TrackRowKind.QUEUE);
         }
 
         public void set_tracks_with_positions (ArrayList<YaMAPI.Track> track_list) {
-            preset_actions ();
-
-            for (int i = 0; i < track_list.size; i++ ) {
-                add_row (new TrackPositionRow (track_list[i], i));
-            }
-
-            postset_actions ();
+            set_tracks_as_queue (track_list);
         }
 
         public void clear_all () {
-            original_track_rows.clear ();
-            sorted_rows.clear ();
-            filtered_rows.clear ();
-            loaded_rows.clear ();
+            store.remove_all ();
+            update_empty_state ();
+        }
+    }
+
+    /**
+     * A short, non-virtual list (the sidebar's "similar tracks"): plain
+     * rows in a box, for places that already live inside another scroller.
+     */
+    public class SimpleTrackList : Gtk.Box {
+
+        public SimpleTrackList () {
+            Object (orientation: Gtk.Orientation.VERTICAL, spacing: 0);
         }
 
-        void sorted_rows_reset () {
-            sorted_rows.clear ();
-
-            if (sort_direction == SortDirection.ASCENDING || is_queue) {
-                sorted_rows.add_all (original_track_rows);
-            } else {
-                for (int i = original_track_rows.size - 1; i >= 0; i--) {
-                    sorted_rows.add (original_track_rows[i]);
-                }
+        public void set_tracks_base (ArrayList<YaMAPI.Track> track_list, HasTrackList yam_object) {
+            while (get_first_child () != null) {
+                remove (get_first_child ());
+            }
+            foreach (var track_info in track_list) {
+                var row = new TrackBase (track_info, yam_object);
+                var click = new Gtk.GestureClick ();
+                click.released.connect (() => {
+                    row.trigger ();
+                });
+                row.add_controller (click);
+                append (row);
             }
         }
     }

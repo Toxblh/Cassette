@@ -157,11 +157,10 @@ namespace Cassette {
                 maximum_size = 1000,
                 margin_start = 12,
                 margin_end = 12,
-                margin_top = 12,
-                margin_bottom = 12
+                margin_top = 12
             };
-            scrolled_window.child = clamp;
 
+            // Header and footer scroll as items of the track list.
             var content = new Gtk.Box (Gtk.Orientation.VERTICAL, 8);
             clamp.child = content;
 
@@ -210,11 +209,17 @@ namespace Cassette {
             tracks_title = EntityPages.section_title (_("Popular tracks"));
             content.append (tracks_title);
 
-            track_list = new TrackList (scrolled_window.vadjustment);
-            content.append (track_list);
+            var footer_clamp = new Adw.Clamp () {
+                maximum_size = 1000,
+                margin_start = 12,
+                margin_end = 12,
+                margin_bottom = 12
+            };
+            var footer = new Gtk.Box (Gtk.Orientation.VERTICAL, 8);
+            footer_clamp.child = footer;
 
             albums_title = EntityPages.section_title (_("Albums"));
-            content.append (albums_title);
+            footer.append (albums_title);
 
             albums_flow = new Gtk.FlowBox () {
                 selection_mode = Gtk.SelectionMode.NONE,
@@ -224,7 +229,13 @@ namespace Cassette {
                 min_children_per_line = 2,
                 max_children_per_line = 6
             };
-            content.append (albums_flow);
+            footer.append (albums_flow);
+
+            track_list = new TrackList () {
+                header_widget = clamp,
+                footer_widget = footer_clamp
+            };
+            scrolled_window.child = track_list;
 
             if (application.main_window != null) {
                 application.main_window.bind_property (

@@ -55,10 +55,8 @@ namespace Cassette {
                 maximum_size = 1000,
                 margin_start = 12,
                 margin_end = 12,
-                margin_top = 12,
-                margin_bottom = 12
+                margin_top = 12
             };
-            scrolled_window.child = clamp;
 
             var content = new Gtk.Box (Gtk.Orientation.VERTICAL, 8);
             clamp.child = content;
@@ -107,8 +105,10 @@ namespace Cassette {
             play_button.clicked.connect (start_playing);
             titles.append (play_button);
 
-            track_list = new TrackList (scrolled_window.vadjustment);
-            content.append (track_list);
+            track_list = new TrackList () {
+                header_widget = clamp
+            };
+            scrolled_window.child = track_list;
 
             if (application.main_window != null) {
                 application.main_window.bind_property (

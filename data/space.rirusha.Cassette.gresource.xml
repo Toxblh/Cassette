@@ -191,9 +191,7 @@
     <file preprocess="xml-stripblanks">ui/track-default-content.ui</file>
     <file preprocess="xml-stripblanks">ui/track-info.ui</file>
     <file preprocess="xml-stripblanks">ui/track-info-panel.ui</file>
-    <file preprocess="xml-stripblanks">ui/track-list.ui</file>
     <file preprocess="xml-stripblanks">ui/track-local-content.ui</file>
-    <file preprocess="xml-stripblanks">ui/track-placeholder.ui</file>
     <file preprocess="xml-stripblanks">ui/track-queue-content.ui</file>
     <file preprocess="xml-stripblanks">ui/volume-button.ui</file>
     <file preprocess="xml-stripblanks">ui/wave-settings.ui</file>

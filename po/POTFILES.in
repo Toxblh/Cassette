@@ -24,8 +24,6 @@ data/ui/preferences-dialog.ui
 data/ui/save-stack.ui
 data/ui/stations-view.blp
 data/ui/track-info.blp
-data/ui/track-list.ui
-data/ui/track-placeholder.ui
 data/ui/wave-settings.blp
 data/ui/window.blp
 src/about.vala

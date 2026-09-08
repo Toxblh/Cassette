@@ -72,7 +72,6 @@ cassette_gui_sources = files(
   'widgets/track-rows/base.vala',
   'widgets/track-rows/default.vala',
   'widgets/track-rows/local.vala',
-  'widgets/track-rows/placeholder.vala',
   'widgets/track-rows/queue.vala',
   'widgets/track-rows/track-row.vala',
 

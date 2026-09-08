@@ -186,6 +186,24 @@ public class Cassette.Window : ApplicationWindow {
             var viewport = focus.get_ancestor (typeof (Gtk.Viewport)) as Gtk.Viewport;
             if (viewport != null) {
                 viewport.scroll_to (focus, null);
+                return;
+            }
+            // Inside a Gtk.ListView (the track list) there is no viewport:
+            // move the scrolled window's adjustment by hand.
+            var scrolled = focus.get_ancestor (typeof (Gtk.ScrolledWindow)) as Gtk.ScrolledWindow;
+            if (scrolled == null) {
+                return;
+            }
+            Graphene.Rect bounds;
+            if (!focus.compute_bounds (scrolled, out bounds)) {
+                return;
+            }
+            var adj = scrolled.vadjustment;
+            double bottom = bounds.origin.y + bounds.size.height + 16;
+            if (bottom > adj.page_size) {
+                adj.value = adj.value + (bottom - adj.page_size);
+            } else if (bounds.origin.y < 0) {
+                adj.value = adj.value + bounds.origin.y;
             }
         });
     }
@@ -207,6 +225,13 @@ public class Cassette.Window : ApplicationWindow {
         // (screen capture needs permissions a terminal rarely has).
         var shot = Environment.get_variable ("CASSETTE_DEBUG_SHOT");
         if (shot != null) {
+            var shot_page = Environment.get_variable ("CASSETTE_DEBUG_PAGE");
+            if (shot_page != null) {
+                Timeout.add_seconds (6, () => {
+                    main_stack.visible_child_name = shot_page;
+                    return Source.REMOVE;
+                });
+            }
             Timeout.add_seconds (12, () => {
                 try {
                     var paintable = new Gtk.WidgetPaintable (this);

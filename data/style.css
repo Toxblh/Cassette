@@ -25,6 +25,20 @@ listview row {
     background-color: rgba(0, 0, 0, 0);
 }
 
+/* The track list: rows carry their own hover/playing styles (track-row). */
+listview.track-list > row {
+    padding: 0;
+    background: none;
+    box-shadow: none;
+    outline: none;
+}
+
+listview.track-list > row:hover,
+listview.track-list > row:active,
+listview.track-list > row:selected {
+    background: none;
+}
+
 .card-box flowboxchild {
     border-radius: 12px;
 }

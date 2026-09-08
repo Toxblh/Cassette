@@ -63,13 +63,21 @@ namespace Cassette {
                 maximum_size = 1000,
                 margin_start = 12,
                 margin_end = 12,
-                margin_top = 12,
-                margin_bottom = 12
+                margin_top = 12
             };
-            scrolled_window.child = clamp;
 
             var content = new Gtk.Box (Gtk.Orientation.VERTICAL, 8);
             clamp.child = content;
+
+            // Everything after the tracks lives in the list's footer item.
+            var footer_clamp = new Adw.Clamp () {
+                maximum_size = 1000,
+                margin_start = 12,
+                margin_end = 12,
+                margin_bottom = 12
+            };
+            var footer = new Gtk.Box (Gtk.Orientation.VERTICAL, 8);
+            footer_clamp.child = footer;
 
             var head = new Gtk.Box (Gtk.Orientation.HORIZONTAL, 12);
             content.append (head);
@@ -101,23 +109,27 @@ namespace Cassette {
 
             tracks_title = EntityPages.section_title (_("Tracks"));
             content.append (tracks_title);
-            track_list = new TrackList (scrolled_window.vadjustment);
-            content.append (track_list);
 
             artists_title = EntityPages.section_title (_("Artists"));
-            content.append (artists_title);
+            footer.append (artists_title);
             artists_list = EntityPages.entity_list ();
-            content.append (artists_list);
+            footer.append (artists_list);
 
             albums_title = EntityPages.section_title (_("Albums"));
-            content.append (albums_title);
+            footer.append (albums_title);
             albums_list = EntityPages.entity_list ();
-            content.append (albums_list);
+            footer.append (albums_list);
 
             playlists_title = EntityPages.section_title (_("Playlists"));
-            content.append (playlists_title);
+            footer.append (playlists_title);
             playlists_list = EntityPages.entity_list ();
-            content.append (playlists_list);
+            footer.append (playlists_list);
+
+            track_list = new TrackList () {
+                header_widget = clamp,
+                footer_widget = footer_clamp
+            };
+            scrolled_window.child = track_list;
         }
 
         static void clear_list (Gtk.ListBox list) {
@@ -133,7 +145,6 @@ namespace Cassette {
             var tracks = result.tracks != null ? result.tracks.results : new ArrayList<YaMAPI.Track> ();
             track_list.set_tracks_base (tracks, result);
             tracks_title.visible = tracks.size > 0;
-            track_list.visible = tracks.size > 0;
             play_button.sensitive = tracks.size > 0;
 
             clear_list (artists_list);

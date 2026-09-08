@@ -41,8 +41,8 @@ namespace Cassette {
         }
 
         construct {
-            track_list = new TrackList (scrolled_window.vadjustment);
-            main_box.append (track_list);
+            track_list = new TrackList ();
+            track_list.take_over (scrolled_window);
         }
 
         void set_values () {
