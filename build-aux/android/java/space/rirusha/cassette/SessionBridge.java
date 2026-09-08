@@ -35,6 +35,9 @@ public final class SessionBridge {
 	static final int CMD_PREV = 4;
 	static final int CMD_STOP = 5;
 	static final int CMD_LIKE = 6;
+	static final int CMD_SHUFFLE = 7;
+	static final String ACTION_SHUFFLE = "space.rirusha.cassette.SHUFFLE";
+	private static boolean shuffled = false;
 
 	private static final String ACTION_LIKE = "space.rirusha.cassette.LIKE";
 
@@ -110,6 +113,7 @@ public final class SessionBridge {
 				@Override public void onSeekTo(long pos) { nativeSeek(pos / 1000.0); }
 				@Override public void onCustomAction(String action, android.os.Bundle extras) {
 					if (ACTION_LIKE.equals(action)) nativeCommand(CMD_LIKE);
+					else if (ACTION_SHUFFLE.equals(action)) nativeCommand(CMD_SHUFFLE);
 				}
 			}, main);
 			session.setPlaybackState(state(PlaybackState.STATE_NONE, 0));
@@ -217,6 +221,17 @@ public final class SessionBridge {
 		});
 	}
 
+	/** Shuffle state: drives the shuffle custom action (local playback). */
+	public static void setShuffle(final boolean on) {
+		main.post(() -> {
+			if (shuffled == on) return;
+			shuffled = on;
+			if (session != null && session.isActive()) {
+				session.setPlaybackState(state(lastState, lastPositionMs));
+			}
+		});
+	}
+
 	/** Like state of the current track: drives the heart custom action. */
 	public static void setLiked(final boolean isLiked) {
 		main.post(() -> {
@@ -255,6 +270,11 @@ public final class SessionBridge {
 		if (icon != 0 && st != PlaybackState.STATE_NONE) {
 			b.addCustomAction(new PlaybackState.CustomAction.Builder(
 					ACTION_LIKE, liked ? "Unlike" : "Like", icon).build());
+		}
+		int shuffleIcon = iconId(shuffled ? "cassette_shuffle_on" : "cassette_shuffle");
+		if (shuffleIcon != 0 && st != PlaybackState.STATE_NONE && remoteVolume == null) {
+			b.addCustomAction(new PlaybackState.CustomAction.Builder(
+					ACTION_SHUFFLE, shuffled ? "Shuffle off" : "Shuffle", shuffleIcon).build());
 		}
 		return b.build();
 	}

@@ -17,9 +17,9 @@ MANIFEST     := $(AUX)/space.rirusha.Cassette.xml
 PROJECT      := .pixiewood/android
 APK_DIR      := $(PROJECT)/app/build/outputs/apk/$(if $(release),release,debug)
 
-.PHONY: android android-blueprints android-subprojects android-prepare android-patch-gtk android-generate android-patch android-build android-sign android-clean
+.PHONY: android android-blueprints android-subprojects android-prepare android-patch-gtk android-patch-intl android-generate android-patch android-build android-sign android-clean
 
-android: android-subprojects android-prepare android-patch-gtk android-generate android-patch android-build
+android: android-subprojects android-prepare android-patch-gtk android-patch-intl android-generate android-patch android-build
 
 # blueprint-compiler validates against the host's Gtk/Adw typelibs, so the .blp
 # files are compiled wherever those are new enough (the host, not the build
@@ -36,6 +36,13 @@ android-subprojects:
 	cp $(AUX)/subprojects/packagefiles/* subprojects/packagefiles/
 
 # ANDROID_NDK pins the toolchain; otherwise pixiewood takes the newest under $(ANDROID_SDK)/ndk.
+# proxy-libintl is a stub outside Windows (msgid in, msgid out); our libintl.c
+# reads the .mo catalogues instead. Copied over the subproject each build.
+android-patch-intl:
+	@if [ -d subprojects/proxy-libintl-0.5 ]; then \
+		cp $(AUX)/libintl/libintl.c subprojects/proxy-libintl-0.5/libintl.c && echo "libintl: real gettext installed"; \
+	else echo "libintl: subprojects/proxy-libintl-0.5 missing"; exit 1; fi
+
 android-prepare:
 	$(PIXIEWOOD) prepare $(if $(release),--release,) \
 		--sdk=$(ANDROID_SDK) $(if $(ANDROID_NDK),--toolchain=$(ANDROID_NDK),) \

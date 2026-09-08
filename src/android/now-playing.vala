@@ -33,13 +33,21 @@ public static void init () {
         on_cmd_prev,
         on_cmd_seek,
         on_cmd_like,
-        on_cmd_volume
+        on_cmd_volume,
+        on_cmd_shuffle
     );
 
     player.played.connect (on_played);
     player.paused.connect (on_paused);
+    // Only a real stop clears the session: track_stopped also fires between
+    // two tracks, and clearing there dropped and re-created the notification
+    // on every change.
     player.stopped.connect (on_local_stopped);
-    player.track_stopped.connect (on_local_stopped);
+    player.notify["shuffle-mode"].connect (() => {
+        if (!remote ()) {
+            cassette_android_now_playing_set_shuffle (player.shuffle_mode == Player.ShuffleMode.ON);
+        }
+    });
     player.playback_callback.connect ((pos_sec) => {
         if (!remote ()) {
             cassette_android_now_playing_update_state (pos_sec, player.state == Player.State.PLAYING);
@@ -133,6 +141,15 @@ static void on_cmd_like () {
     }
 }
 
+// Shuffle button in the system media controls (local playback only).
+static void on_cmd_shuffle () {
+    if (remote ()) {
+        return;
+    }
+    player.shuffle_mode = player.shuffle_mode == Player.ShuffleMode.ON
+        ? Player.ShuffleMode.OFF : Player.ShuffleMode.ON;
+}
+
 // Volume keys while a station plays.
 static void on_cmd_volume (int percent) {
     if (remote ()) {
@@ -175,6 +192,7 @@ static void send_local_update (YaMAPI.Track track, bool is_playing) {
     cassette_android_now_playing_set_liked (
         yam_talker.likes_controller.get_content_is_liked (LikableType.TRACK, track.id)
     );
+    cassette_android_now_playing_set_shuffle (player.shuffle_mode == Player.ShuffleMode.ON);
 
     cassette_android_now_playing_update (
         track.title ?? "",

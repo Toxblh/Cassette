@@ -1538,3 +1538,139 @@ msgstr "Информационное сообщение об окне: %s"
 
 #~ msgid "Rirusha"
 #~ msgstr "Rirusha"
+
+# Stations, search, artist/album pages, font check (2026-09)
+msgid "%d track"
+msgid_plural "%d tracks"
+msgstr[0] "%d трек"
+msgstr[1] "%d трека"
+msgstr[2] "%d треков"
+
+msgid "%s did not respond"
+msgstr "%s не отвечает"
+
+msgid "%s is not on this network"
+msgstr "%s не в этой сети"
+
+msgid "%s · not on this network"
+msgstr "%s · не в этой сети"
+
+msgid "%s · playing here now"
+msgstr "%s · сейчас играет здесь"
+
+msgid "Albums"
+msgstr "Альбомы"
+
+msgid "Already connecting"
+msgstr "Подключение уже идёт"
+
+msgid "Artists"
+msgstr "Исполнители"
+
+msgid "Connection to %s lost"
+msgstr "Связь с %s потеряна"
+
+msgid "Couldn't load the track from %s"
+msgstr "Не удалось загрузить трек с %s"
+
+msgid "Font check"
+msgstr "Проверка шрифтов"
+
+msgid "Font check…"
+msgstr "Проверка шрифтов…"
+
+msgid "Look for stations again"
+msgstr "Поискать станции ещё раз"
+
+msgid "Looking for stations…"
+msgstr "Ищу станции…"
+
+msgid "No stations in your account. They appear here once added in the Yandex app."
+msgstr "В аккаунте нет станций. Они появятся здесь после добавления в приложении Яндекса."
+
+msgid "Nothing found"
+msgstr "Ничего не найдено"
+
+msgid "Nothing is playing"
+msgstr "Ничего не играет"
+
+msgid "Open artist"
+msgstr "Открыть исполнителя"
+
+msgid "Play found tracks"
+msgstr "Играть найденные треки"
+
+msgid "Play on"
+msgstr "Где играть"
+
+msgid "Play on a Yandex station"
+msgstr "Играть на Яндекс Станции"
+
+msgid "Play on a Yandex station…"
+msgstr "Играть на Яндекс Станции…"
+
+msgid "Play on this device"
+msgstr "Играть на этом устройстве"
+
+msgid "Play on…"
+msgstr "Играть на…"
+
+msgid "Play popular tracks"
+msgstr "Играть популярные треки"
+
+msgid "Playback failed: %s"
+msgstr "Ошибка воспроизведения: %s"
+
+msgid "Playing on %s"
+msgstr "Играет на %s"
+
+msgid "Popular tracks"
+msgstr "Популярные треки"
+
+msgid "Search: %s"
+msgstr "Поиск: %s"
+
+msgid "Sign in to control stations"
+msgstr "Войдите, чтобы управлять станциями"
+
+msgid "Station volume"
+msgstr "Громкость станции"
+
+msgid "This device"
+msgstr "Это устройство"
+
+msgid "Tracks"
+msgstr "Треки"
+
+msgid "Volume"
+msgstr "Громкость"
+
+msgid "Yandex Module"
+msgstr "Яндекс Модуль"
+
+msgid "Yandex Module 2"
+msgstr "Яндекс Модуль 2"
+
+msgid "Yandex Station"
+msgstr "Яндекс Станция"
+
+msgid "Yandex Station 2"
+msgstr "Яндекс Станция 2"
+
+msgid "Yandex Station Lite"
+msgstr "Яндекс Станция Лайт"
+
+msgid "Yandex Station Max"
+msgstr "Яндекс Станция Макс"
+
+msgid "Yandex Station Midi"
+msgstr "Яндекс Станция Миди"
+
+msgid "Yandex Station Mini"
+msgstr "Яндекс Станция Мини"
+
+msgid "Yandex Station Mini 2"
+msgstr "Яндекс Станция Мини 2"
+
+msgid "Yandex stations"
+msgstr "Яндекс Станции"

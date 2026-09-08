@@ -70,9 +70,16 @@ public class PlaybackService extends Service {
 		ctx.getSystemService(NotificationManager.class).notify(NOTIFICATION_ID, build(ctx));
 	}
 
+	/** The app's symbolic icon (res/drawable/cassette_symbolic from
+	 *  patch-android-project.py), falling back to the system play glyph. */
+	private static int smallIcon(Context ctx) {
+		int id = ctx.getResources().getIdentifier("cassette_symbolic", "drawable", ctx.getPackageName());
+		return id != 0 ? id : android.R.drawable.ic_media_play;
+	}
+
 	private static Notification build(Context ctx) {
 		Notification.Builder b = new Notification.Builder(ctx, CHANNEL)
-				.setSmallIcon(android.R.drawable.ic_media_play)
+				.setSmallIcon(smallIcon(ctx))
 				.setContentTitle(SessionBridge.currentTitle())
 				.setContentText(SessionBridge.currentArtist())
 				.setOngoing(SessionBridge.isPlaying())

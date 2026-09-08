@@ -16,8 +16,12 @@ public extern void cassette_android_now_playing_init (
     AndroidNowPlayingCmd     on_prev,
     AndroidNowPlayingSeekCmd on_seek,
     AndroidNowPlayingCmd     on_like,
-    AndroidNowPlayingVolumeCmd on_volume
+    AndroidNowPlayingVolumeCmd on_volume,
+    AndroidNowPlayingCmd     on_shuffle
 );
+
+[CCode (cname = "cassette_android_now_playing_set_shuffle", cheader_filename = "android-now-playing.h")]
+public extern void cassette_android_now_playing_set_shuffle (bool shuffled);
 
 [CCode (cname = "cassette_android_now_playing_set_remote_volume", cheader_filename = "android-now-playing.h")]
 public extern void cassette_android_now_playing_set_remote_volume (bool remote, int percent);

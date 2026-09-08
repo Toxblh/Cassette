@@ -54,7 +54,12 @@ namespace Cassette {
         }
 
         public virtual void unload_content () {
-            child = new TrackPlaceholder ();
+            // Same height as the row it replaces: a different one shifts
+            // everything below while scrolling (visible jitter on phones).
+            int height = get_height ();
+            child = new TrackPlaceholder () {
+                height_request = height > 0 ? height : -1
+            };
         }
     }
 

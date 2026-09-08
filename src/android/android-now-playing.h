@@ -20,7 +20,11 @@ void cassette_android_now_playing_init (CassetteNowPlayingCmd     on_play,
                                         CassetteNowPlayingCmd     on_prev,
                                         CassetteNowPlayingSeekCmd on_seek,
                                         CassetteNowPlayingCmd     on_like,
-                                        CassetteNowPlayingVolumeCmd on_volume);
+                                        CassetteNowPlayingVolumeCmd on_volume,
+                                        CassetteNowPlayingCmd     on_shuffle);
+
+/* Shuffle button in the system media controls: on_shuffle toggles it. */
+void cassette_android_now_playing_set_shuffle (gboolean shuffled);
 
 /* While playback is on a Yandex station the hardware volume keys and the
  * system volume slider drive the station instead of the phone: the session

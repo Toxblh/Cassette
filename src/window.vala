@@ -168,6 +168,28 @@ public class Cassette.Window : ApplicationWindow {
         }
     }
 
+    int last_height = 0;
+
+    // The on-screen keyboard shrinks the window (adjustResize); GTK only
+    // scrolls to the focus on focus changes, so do it on shrink too.
+    void keep_focus_visible (int height) {
+        bool shrank = last_height > 0 && height < last_height;
+        last_height = height;
+        if (!shrank) {
+            return;
+        }
+        var focus = get_focus ();
+        if (focus == null || !(focus is Gtk.Editable || focus is Gtk.Text)) {
+            return;
+        }
+        Idle.add_once (() => {
+            var viewport = focus.get_ancestor (typeof (Gtk.Viewport)) as Gtk.Viewport;
+            if (viewport != null) {
+                viewport.scroll_to (focus, null);
+            }
+        });
+    }
+
     construct {
         search_entry.search_changed.connect (() => {
             run_search (search_entry.text);
@@ -232,6 +254,7 @@ public class Cassette.Window : ApplicationWindow {
         }
 
         resized.connect ((width, height) => {
+            keep_focus_visible (height);
             bool compact = width < PLAYER_BAR_COMPACT_WIDTH;
             bool tiny = width < PLAYER_BAR_TINY_WIDTH;
             if (player_bar.compact != compact) {
@@ -554,6 +577,9 @@ public class Cassette.Window : ApplicationWindow {
         report.append_printf ("FONTCONFIG_FILE: %s\n", Environment.get_variable ("FONTCONFIG_FILE") ?? "(unset)");
         report.append_printf ("setup: %s\n", Environment.get_variable ("CASSETTE_FONTS_STATUS") ?? "(not run)");
         report.append_printf ("XDG_CONFIG_HOME: %s\n", Environment.get_variable ("XDG_CONFIG_HOME") ?? "(unset)");
+        report.append_printf ("LANGUAGE: %s, languages: %s, _(\"Liked\") = %s\n",
+            Environment.get_variable ("LANGUAGE") ?? "(unset)",
+            string.joinv (",", Intl.get_language_names ()), _("Liked"));
         foreach (var dir in Environment.get_system_data_dirs ()) {
             var inter = Path.build_filename (dir, "fonts", "Inter", "Inter-Regular.ttf");
             if (FileUtils.test (inter, FileTest.EXISTS)) {

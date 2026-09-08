@@ -4,14 +4,14 @@
 #define BRIDGE "space/rirusha/cassette/SessionBridge"
 
 /* Must match SessionBridge.CMD_* */
-enum { CMD_PLAY = 0, CMD_PAUSE = 1, CMD_PLAY_PAUSE = 2, CMD_NEXT = 3, CMD_PREV = 4, CMD_STOP = 5, CMD_LIKE = 6 };
+enum { CMD_PLAY = 0, CMD_PAUSE = 1, CMD_PLAY_PAUSE = 2, CMD_NEXT = 3, CMD_PREV = 4, CMD_STOP = 5, CMD_LIKE = 6, CMD_SHUFFLE = 7 };
 
-static CassetteNowPlayingCmd     g_on_play, g_on_pause, g_on_play_pause, g_on_next, g_on_prev, g_on_like;
+static CassetteNowPlayingCmd     g_on_play, g_on_pause, g_on_play_pause, g_on_next, g_on_prev, g_on_like, g_on_shuffle;
 static CassetteNowPlayingSeekCmd g_on_seek;
 static CassetteNowPlayingVolumeCmd g_on_volume;
 
 static jclass    g_class = NULL;
-static jmethodID g_init, g_update, g_update_state, g_clear, g_set_liked, g_set_remote_volume;
+static jmethodID g_init, g_update, g_update_state, g_clear, g_set_liked, g_set_remote_volume, g_set_shuffle;
 
 static gboolean
 ensure (JNIEnv *env)
@@ -29,6 +29,7 @@ ensure (JNIEnv *env)
   g_clear        = (*env)->GetStaticMethodID (env, g_class, "clear",       "()V");
   g_set_liked    = (*env)->GetStaticMethodID (env, g_class, "setLiked",    "(Z)V");
   g_set_remote_volume = (*env)->GetStaticMethodID (env, g_class, "setRemoteVolume", "(ZI)V");
+  g_set_shuffle  = (*env)->GetStaticMethodID (env, g_class, "setShuffle",  "(Z)V");
 
   if (cassette_jni_check (env, "SessionBridge method lookup"))
     {
@@ -58,8 +59,10 @@ cassette_android_now_playing_init (CassetteNowPlayingCmd     on_play,
                                    CassetteNowPlayingCmd     on_prev,
                                    CassetteNowPlayingSeekCmd on_seek,
                                    CassetteNowPlayingCmd     on_like,
-                                   CassetteNowPlayingVolumeCmd on_volume)
+                                   CassetteNowPlayingVolumeCmd on_volume,
+                                   CassetteNowPlayingCmd     on_shuffle)
 {
+  g_on_shuffle    = on_shuffle;
   g_on_volume     = on_volume;
   g_on_like       = on_like;
   g_on_play       = on_play;
@@ -124,6 +127,16 @@ cassette_android_now_playing_set_liked (gboolean liked)
 }
 
 void
+cassette_android_now_playing_set_shuffle (gboolean shuffled)
+{
+  JNIEnv *env = cassette_jni_env ();
+  if (!env || !ensure (env))
+    return;
+  (*env)->CallStaticVoidMethod (env, g_class, g_set_shuffle, (jboolean) shuffled);
+  cassette_jni_check (env, "SessionBridge.setShuffle");
+}
+
+void
 cassette_android_now_playing_set_remote_volume (gboolean remote, int percent)
 {
   JNIEnv *env = cassette_jni_env ();
@@ -158,6 +171,7 @@ idle_cmd (gpointer data)
     case CMD_PREV:       fn = g_on_prev; break;
     case CMD_STOP:       fn = g_on_pause; break;
     case CMD_LIKE:       fn = g_on_like; break;
+    case CMD_SHUFFLE:    fn = g_on_shuffle; break;
     }
   if (fn) fn ();
   return G_SOURCE_REMOVE;

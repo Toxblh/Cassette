@@ -25,6 +25,19 @@ public class CassetteApplication extends RuntimeApplication {
 
 	@Override
 	public void onCreate() {
+		// gettext (proxy-libintl) picks the language from the environment;
+		// nothing sets it on Android, so the UI stayed English.
+		java.util.Locale locale = java.util.Locale.getDefault();
+		String lang = locale.getLanguage();
+		if (!locale.getCountry().isEmpty()) lang += "_" + locale.getCountry();
+		try {
+			android.system.Os.setenv("LANGUAGE", lang, true);
+			android.system.Os.setenv("LC_MESSAGES", lang + ".UTF-8", true);
+			// The Yandex API language (Utils.get_language) comes from LANG.
+			android.system.Os.setenv("LANG", lang + ".UTF-8", true);
+		} catch (android.system.ErrnoException e) {
+			android.util.Log.w("Cassette", "setenv LANGUAGE failed", e);
+		}
 		Native.init(this);
 		super.onCreate();
 		registerActivityLifecycleCallbacks(new ActivityLifecycleCallbacks() {

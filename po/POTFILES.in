@@ -73,3 +73,14 @@ src/widgets/views/cant-show.vala
 src/widgets/views/devel.vala
 src/widgets/views/playlist.vala
 src/window.vala
+src/widgets/track-info-panel.vala
+src/widgets/station/output-button.vala
+src/widgets/station/station-picker-dialog.vala
+src/widgets/station/station-bar.vala
+src/widgets/station/station-volume-slider.vala
+src/widgets/views/artist.vala
+src/widgets/views/album.vala
+src/widgets/views/search.vala
+src/client/glagol/station-manager.vala
+src/client/glagol/glagol-device.vala
+src/client/glagol/device-token-provider.vala

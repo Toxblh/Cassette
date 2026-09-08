@@ -191,7 +191,15 @@ int main (string[] args) {
     android_setup ();
 #endif
 
+#if ANDROID
+    // GNOMELOCALEDIR is the absolute install prefix, meaningless in an APK;
+    // the catalogues sit next to the other data (share/locale).
+    var locale_dirs = Environment.get_system_data_dirs ();
+    Intl.bindtextdomain (Config.GETTEXT_PACKAGE,
+        locale_dirs.length > 0 ? Path.build_filename (locale_dirs[0], "locale") : Config.GNOMELOCALEDIR);
+#else
     Intl.bindtextdomain (Config.GETTEXT_PACKAGE, Config.GNOMELOCALEDIR);
+#endif
     Intl.bind_textdomain_codeset (Config.GETTEXT_PACKAGE, "UTF-8");
     Intl.textdomain (Config.GETTEXT_PACKAGE);
 
