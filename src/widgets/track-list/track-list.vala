@@ -42,11 +42,59 @@ namespace Cassette {
             Object (track_info: track_info, yam_object: yam_object);
         }
 
+        /**
+         * Height of a real row, once one has been allocated. Placeholders take
+         * it so that loading and unloading rows never changes the list's
+         * height: a placeholder taller or shorter than the row it stands for
+         * shifts everything below it — the "shaking" list on phones.
+         */
+        public static int known_height = 0;
+
+        /** Tracks with a version line ("Russian ver.") are one text line taller. */
+        public static int known_height_tall = 0;
+
+        public bool is_tall {
+            get {
+                return track_info.version != null && track_info.version != "";
+            }
+        }
+
+        static int height_for (bool tall) {
+            if (tall && known_height_tall > 0) {
+                return known_height_tall;
+            }
+            return known_height;
+        }
+
         construct {
             can_focus = false;
             vexpand = false;
 
-            child = new TrackPlaceholder ();
+            int h = height_for (is_tall);
+            child = new TrackPlaceholder () {
+                height_request = h > 0 ? h : -1
+            };
+        }
+
+        /** Applies the measured heights to this row's placeholder, if any. */
+        public void refresh_placeholder_height () {
+            int h = height_for (is_tall);
+            if (child is TrackPlaceholder && h > 0 && child.height_request != h) {
+                child.height_request = h;
+            }
+        }
+
+        /** Records this loaded row's height for its class (plain / tall). */
+        public void record_height () {
+            int height = get_height ();
+            if (height <= 0 || child is TrackPlaceholder) {
+                return;
+            }
+            if (is_tall) {
+                known_height_tall = height;
+            } else {
+                known_height = height;
+            }
         }
 
         public virtual void load_content () {
@@ -54,11 +102,10 @@ namespace Cassette {
         }
 
         public virtual void unload_content () {
-            // Same height as the row it replaces: a different one shifts
-            // everything below while scrolling (visible jitter on phones).
+            record_height ();
             int height = get_height ();
             child = new TrackPlaceholder () {
-                height_request = height > 0 ? height : -1
+                height_request = height > 0 ? height : (height_for (is_tall) > 0 ? height_for (is_tall) : -1)
             };
         }
     }
@@ -532,7 +579,28 @@ namespace Cassette {
             }
 
             loaded_rows = new_loaded_rows;
+
+            if (!height_probe_pending) {
+                height_probe_pending = true;
+                // Once the freshly loaded rows are allocated, record their
+                // heights per class and size every placeholder to match.
+                Idle.add_once (() => {
+                    height_probe_pending = false;
+                    int plain_before = TrackRowW.known_height;
+                    int tall_before = TrackRowW.known_height_tall;
+                    foreach (int row_id in loaded_rows) {
+                        filtered_rows[row_id].record_height ();
+                    }
+                    if (plain_before != TrackRowW.known_height || tall_before != TrackRowW.known_height_tall) {
+                        foreach (var row in filtered_rows) {
+                            row.refresh_placeholder_height ();
+                        }
+                    }
+                });
+            }
         }
+
+        bool height_probe_pending = false;
 
         public void unload_all () {
             foreach (int row_id in loaded_rows) {
