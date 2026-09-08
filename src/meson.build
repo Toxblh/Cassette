@@ -194,6 +194,8 @@ if is_android
     'android/android-bars.c',
     'android/android-bars.vapi',
     'android/android-jni.c',
+    'android/android-stalls.c',
+    'android/android-stalls.vapi',
     'android/android-now-playing.c',
     'android/android-now-playing.vapi',
     'android/android-player.c',

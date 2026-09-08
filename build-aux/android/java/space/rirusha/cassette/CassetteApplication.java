@@ -18,6 +18,17 @@ public class CassetteApplication extends RuntimeApplication {
 
 	private static Activity resumedActivity = null;
 
+	/** True when <external files>/debug.env has KEY=... (the native side reads the same file). */
+	private boolean debugFlag(String key) {
+		java.io.File f = new java.io.File(getExternalFilesDir(null), "debug.env");
+		if (!f.exists()) return false;
+		try (java.io.BufferedReader r = new java.io.BufferedReader(new java.io.FileReader(f))) {
+			String line;
+			while ((line = r.readLine()) != null) if (line.trim().startsWith(key + "=")) return true;
+		} catch (java.io.IOException e) { /* no flag */ }
+		return false;
+	}
+
 	/** The activity in front, if any: dialogs (sign-in) attach to it. */
 	static Activity getResumedActivity() {
 		return resumedActivity;
@@ -40,6 +51,7 @@ public class CassetteApplication extends RuntimeApplication {
 		}
 		Native.init(this);
 		super.onCreate();
+		if (debugFlag("CASSETTE_DEBUG_STALLS")) UiThreadWatchdog.start();
 		registerActivityLifecycleCallbacks(new ActivityLifecycleCallbacks() {
 			@Override public void onActivityResumed(Activity a) { resumedActivity = a; }
 			@Override public void onActivityPaused(Activity a) { if (resumedActivity == a) resumedActivity = null; }

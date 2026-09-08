@@ -237,14 +237,31 @@ public class Cassette.Window : ApplicationWindow {
 
         // CASSETTE_DEBUG_MENU_SHOTS=<dir>: open the primary menu as a bottom
         // sheet and save a burst of snapshots of the window while it animates.
+        // CASSETTE_DEBUG_DIALOG=menu|account|picker picks what to open.
         var debug_menu_shots = Environment.get_variable ("CASSETTE_DEBUG_MENU_SHOTS");
         if (debug_menu_shots != null) {
             Timeout.add_seconds (8, () => {
                 int64 t0 = get_monotonic_time ();
                 var clock = get_frame_clock ();
                 int64 f0 = clock != null ? clock.get_frame_counter () : 0;
-                header_bar.open_primary_menu_dialog ();
+                var which = Environment.get_variable ("CASSETTE_DEBUG_DIALOG") ?? "menu";
+                if (which == "account") {
+                    header_bar.on_avatar_button_clicked ();
+                } else if (which == "picker") {
+                    new StationPickerDialog ().present (this);
+                } else {
+                    header_bar.open_primary_menu_dialog ();
+                }
                 message ("menu shots: dialog presented after %.1f ms", (get_monotonic_time () - t0) / 1000.0);
+                int64 last_tick = get_monotonic_time ();
+                Timeout.add (5, () => {
+                    int64 now = get_monotonic_time ();
+                    if (now - last_tick > 40000) {
+                        message ("main loop stalled %.0f ms (at %.0f ms)", (now - last_tick) / 1000.0, (now - t0) / 1000.0);
+                    }
+                    last_tick = now;
+                    return now - t0 < 1500000 ? Source.CONTINUE : Source.REMOVE;
+                });
                 int shot_no = 0;
                 Timeout.add (25, () => {
                     // Timing first: a late tick means the main loop was busy,
@@ -252,7 +269,11 @@ public class Cassette.Window : ApplicationWindow {
                     message ("menu shot %02d at %.0f ms, frames painted so far: %" + int64.FORMAT, shot_no,
                         (get_monotonic_time () - t0) / 1000.0,
                         clock != null ? clock.get_frame_counter () - f0 : 0);
-                    save_snapshot ("%s/menu-%02d.png".printf (debug_menu_shots, shot_no));
+                    // Rendering a snapshot is itself slow on phones: with a
+                    // missing directory only the timing is logged.
+                    if (FileUtils.test (debug_menu_shots, FileTest.IS_DIR)) {
+                        save_snapshot ("%s/menu-%02d.png".printf (debug_menu_shots, shot_no));
+                    }
                     shot_no++;
                     return shot_no < 24 ? Source.CONTINUE : Source.REMOVE;
                 });
@@ -485,11 +506,15 @@ public class Cassette.Window : ApplicationWindow {
             cachier.check_all_cache.begin ();
 
             notify["is-active"].connect (() => {
+                debug ("window is-active -> %s", is_active.to_string ());
                 if (
                     is_active &&
                     player.state != Player.State.PLAYING
                 ) {
-                    yam_talker.update_all.begin ();
+                    int64 t = get_monotonic_time ();
+                    yam_talker.update_all.begin ((obj, res) => {
+                        debug ("update_all done in %.0f ms", (get_monotonic_time () - t) / 1000.0);
+                    });
                 }
             });
 

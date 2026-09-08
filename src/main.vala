@@ -87,6 +87,12 @@ void android_setup () {
         }
     }
 
+    // CASSETTE_DEBUG_STALLS=1: backtraces of the GTK thread whenever the main
+    // loop stops for more than 80 ms (logcat tag CassetteStall).
+    if (Environment.get_variable ("CASSETTE_DEBUG_STALLS") != null) {
+        cassette_android_stalls_start ();
+    }
+
     // fontconfig defaults to /etc/fonts, which does not exist on Android;
     // the config from the fontconfig subproject lands in XDG_CONFIG_DIRS.
     if (Environment.get_variable ("FONTCONFIG_FILE") == null) {

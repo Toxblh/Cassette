@@ -1,0 +1,92 @@
+diff -ruN a/gdk/android/gdkandroidchoreographersource-private.h b/gdk/android/gdkandroidchoreographersource-private.h
+--- a/gdk/android/gdkandroidchoreographersource-private.h	2026-09-09 00:34:17.594692894 +0300
++++ b/gdk/android/gdkandroidchoreographersource-private.h	2026-09-09 00:34:17.645380127 +0300
+@@ -42,6 +42,10 @@
+  */
+ GSource *gdk_android_choreographer_source_new     (GMainContext *context);
+ 
++/* JNI: GlibContext.initChoreographer(), run on the UI thread. */
++#include <jni.h>
++void _gdk_android_choreographer_init_ui_thread (JNIEnv *env, jclass klass);
++
+ void     gdk_android_choreographer_source_pause   (GdkAndroidChoreographerSource *source);
+ void     gdk_android_choreographer_source_unpause (GdkAndroidChoreographerSource *source);
+ 
+diff -ruN a/gdk/android/gdkandroidchoreographersource.c b/gdk/android/gdkandroidchoreographersource.c
+--- a/gdk/android/gdkandroidchoreographersource.c	2026-09-09 00:34:17.583859749 +0300
++++ b/gdk/android/gdkandroidchoreographersource.c	2026-09-09 00:34:17.645251460 +0300
+@@ -131,6 +131,22 @@
+   gdk_android_choreographer_source_finalize,
+ };
+ 
++/* AChoreographer_getInstance() is per thread and needs a Looper: on the
++ * GTK thread it returns NULL, leaving the frame clock without vsync (the
++ * spring animations of dialogs and sheets then paint only a few frames).
++ * The UI thread grabs its instance early (GlibContext.initChoreographer,
++ * called from RuntimeApplication.onCreate) and the source uses that. The
++ * callbacks run on the UI thread, which is what the source is written for. */
++static AChoreographer *ui_thread_choreographer = NULL;
++
++void
++_gdk_android_choreographer_init_ui_thread (JNIEnv *env, jclass klass)
++{
++  ui_thread_choreographer = AChoreographer_getInstance ();
++  if (ui_thread_choreographer == NULL)
++    g_warning ("GdkAndroidChoreographerSource: no choreographer on the UI thread either");
++}
++
+ GSource *
+ gdk_android_choreographer_source_new (GMainContext *context)
+ {
+@@ -146,6 +162,8 @@
+ 
+   self->choreographer = AChoreographer_getInstance ();
+   if (self->choreographer == NULL)
++    self->choreographer = ui_thread_choreographer;
++  if (self->choreographer == NULL)
+     {
+       g_warning ("GdkAndroidChoreographerSource: AChoreographer_getInstance() failed");
+       g_source_unref (source);
+diff -ruN a/gdk/android/gdkandroidinit.c b/gdk/android/gdkandroidinit.c
+--- a/gdk/android/gdkandroidinit.c	2026-09-09 00:34:17.604481208 +0300
++++ b/gdk/android/gdkandroidinit.c	2026-09-09 00:34:17.645529460 +0300
+@@ -29,9 +29,11 @@
+ #include "gdkandroidutils-private.h"
+ 
+ #include "gdkandroidinit-private.h"
++#include "gdkandroidchoreographersource-private.h"
+ 
+ static const JNINativeMethod glib_context_natives[] = {
+-  { .name = "runOnMain", .signature = "(Ljava/lang/Runnable;)V", .fnPtr = _gdk_android_glib_context_run_on_main }
++  { .name = "runOnMain", .signature = "(Ljava/lang/Runnable;)V", .fnPtr = _gdk_android_glib_context_run_on_main },
++  { .name = "initChoreographer", .signature = "()V", .fnPtr = _gdk_android_choreographer_init_ui_thread }
+ };
+ 
+ static void _gdk_android_gdk_context__set_latest_activity (JNIEnv *env, jclass this, jobject activity);
+diff -ruN a/gdk/android/glue/java/org/gtk/android/GlibContext.java b/gdk/android/glue/java/org/gtk/android/GlibContext.java
+--- a/gdk/android/glue/java/org/gtk/android/GlibContext.java	2026-09-09 00:34:17.614605938 +0300
++++ b/gdk/android/glue/java/org/gtk/android/GlibContext.java	2026-09-09 00:34:17.645641668 +0300
+@@ -37,6 +37,9 @@
+ 
+ 	public static native void runOnMain(Runnable runnable);
+ 
++	/** Grabs the UI thread's Choreographer for GDK's frame clock; call on the UI thread. */
++	public static native void initChoreographer();
++
+ 	@UiThread
+ 	public static <T> T blockForMain(Supplier<T> runnable) {
+ 		CountDownLatch barrier = new CountDownLatch(1);
+diff -ruN a/gdk/android/glue/java/org/gtk/android/RuntimeApplication.java b/gdk/android/glue/java/org/gtk/android/RuntimeApplication.java
+--- a/gdk/android/glue/java/org/gtk/android/RuntimeApplication.java	2026-09-09 00:34:17.623444129 +0300
++++ b/gdk/android/glue/java/org/gtk/android/RuntimeApplication.java	2026-09-09 00:40:27.613374902 +0300
+@@ -41,6 +41,10 @@
+ 	public void onCreate() {
+ 		super.onCreate();
+ 		SystemFilesystem.writeResources(this);
++		// Natives are registered in JNI_OnLoad (System.loadLibrary above), so
++		// this can run before the GTK thread exists — it must: the display
++		// initialisation on that thread picks the instance up.
++		GlibContext.initChoreographer();
+ 		startRuntime(System.mapLibraryName(getApplicationLibrary()));
+ 	}
+ 
