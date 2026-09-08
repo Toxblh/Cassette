@@ -204,6 +204,11 @@ public abstract class Cassette.CustomMenuButton : ShrinkableBin {
         return box;
     }
 
+    /** Opens the menu as a dialog regardless of the size mode (debug hooks). */
+    public void open_dialog_menu () {
+        show_dialog_menu ();
+    }
+
     void show_dialog_menu () {
         real_button.set_popover (null);
 

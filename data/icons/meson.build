@@ -2,12 +2,15 @@ scalable_dir = join_paths('hicolor', 'scalable', 'apps')
 
 install_data(
   join_paths(scalable_dir, ('@0@.svg').format(app_id_dyn)),
-  install_dir: join_paths(get_option('datadir'), 'icons', scalable_dir)
+  install_dir: join_paths(get_option('datadir'), 'icons', scalable_dir),
+  # pixiewood installs `--tags runtime`; untagged data would be left out of the APK.
+  install_tag: 'runtime',
 )
 
 symbolic_dir = join_paths('hicolor', 'symbolic', 'apps')
 
 install_data(
   join_paths(symbolic_dir, ('@0@-symbolic.svg').format(app_id_dyn)),
-  install_dir: join_paths(get_option('datadir'), 'icons', symbolic_dir)
+  install_dir: join_paths(get_option('datadir'), 'icons', symbolic_dir),
+  install_tag: 'runtime',
 )

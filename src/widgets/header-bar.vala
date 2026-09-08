@@ -108,6 +108,11 @@ public class Cassette.HeaderBar : ShrinkableBin {
 
     }
 
+    /** For CASSETTE_DEBUG_MENU_SHOTS: the primary menu as a dialog. */
+    public void open_primary_menu_dialog () {
+        menu_button.open_dialog_menu ();
+    }
+
     public void on_avatar_button_clicked () {
         var dilaog = new AccountInfoDialog (yam_talker.me);
         dilaog.present (this);

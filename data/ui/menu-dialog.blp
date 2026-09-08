@@ -9,8 +9,10 @@ template $CassetteMenuDialog: Adw.Dialog {
       orientation: vertical;
       spacing: 7;
 
+      // No vexpand here: while the bottom sheet slides in, libadwaita lays
+      // the content out in the visible part of the sheet, and an expanding
+      // title pinned the menu to the bottom edge instead of sliding with it.
       Adw.Clamp title_clamp {
-        vexpand: true;
         valign: start;
         margin-end: 7;
         margin-start: 7;
