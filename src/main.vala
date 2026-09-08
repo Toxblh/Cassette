@@ -66,6 +66,27 @@ void android_setup () {
         }
     }
 
+    // gdk-pixbuf: only built-in loaders, no loaders.cache in the APK. Without
+    // one, gdk_pixbuf_io_init() reports failure and is re-run on every image
+    // load, prepending another copy of the built-in modules to the loader
+    // list while other threads walk it unlocked — a crash in
+    // _gdk_pixbuf_get_module on fast devices (Xiaomi report). An empty
+    // module file makes the initialisation succeed once.
+    // CASSETTE_DEBUG_NO_PIXBUF_FIX=1 (debug.env) keeps the old behaviour.
+    if (Environment.get_variable ("GDK_PIXBUF_MODULE_FILE") == null &&
+            Environment.get_variable ("CASSETTE_DEBUG_NO_PIXBUF_FIX") == null) {
+        var loaders = Path.build_filename (Environment.get_user_cache_dir (), "gdk-pixbuf-loaders.cache");
+        try {
+            if (!FileUtils.test (loaders, FileTest.EXISTS)) {
+                DirUtils.create_with_parents (Path.get_dirname (loaders), 0755);
+                FileUtils.set_contents (loaders, "# Cassette: built-in gdk-pixbuf loaders only\n");
+            }
+            Environment.set_variable ("GDK_PIXBUF_MODULE_FILE", loaders, true);
+        } catch (Error e) {
+            warning ("gdk-pixbuf module file not written: %s", e.message);
+        }
+    }
+
     // fontconfig defaults to /etc/fonts, which does not exist on Android;
     // the config from the fontconfig subproject lands in XDG_CONFIG_DIRS.
     if (Environment.get_variable ("FONTCONFIG_FILE") == null) {

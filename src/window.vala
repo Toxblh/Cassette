@@ -203,6 +203,16 @@ public class Cassette.Window : ApplicationWindow {
             });
         }
 
+        // CASSETTE_DEBUG_PIXBUF_STRESS=<threads>: decode cached cover images
+        // from that many threads at once, 300 times each (gdk-pixbuf race check).
+        var debug_stress = Environment.get_variable ("CASSETTE_DEBUG_PIXBUF_STRESS");
+        if (debug_stress != null) {
+            Timeout.add_seconds (10, () => {
+                debug_pixbuf_stress (int.parse (debug_stress));
+                return Source.REMOVE;
+            });
+        }
+
         // CASSETTE_DEBUG_SEARCH=<text> / CASSETTE_DEBUG_ARTIST=<id>: open
         // those pages after start-up (snapshots without clicking).
         var debug_search = Environment.get_variable ("CASSETTE_DEBUG_SEARCH");
@@ -484,6 +494,47 @@ public class Cassette.Window : ApplicationWindow {
             return;
         }
         player_bar_toolbar.reveal_bottom_bars = false;
+    }
+
+    void debug_pixbuf_stress (int threads) {
+        // Any cached image files will do.
+        var dir = Client.storager.cache_images_dir_file;
+        string[] files = {};
+        try {
+            var children = dir.enumerate_children (FileAttribute.STANDARD_NAME, FileQueryInfoFlags.NONE);
+            FileInfo? info;
+            while ((info = children.next_file ()) != null && files.length < 8) {
+                files += dir.get_child (info.get_name ()).peek_path ();
+            }
+        } catch (Error e) {
+            warning ("pixbuf stress: %s", e.message);
+            return;
+        }
+        message ("pixbuf stress: %d threads over %d files", threads, files.length);
+        if (files.length == 0) {
+            return;
+        }
+        for (int t = 0; t < threads; t++) {
+            int thread_no = t;
+            new Thread<void> ("pixbuf-stress", () => {
+                int ok = 0;
+                for (int i = 0; i < 300; i++) {
+                    try {
+                        uint8[] data;
+                        FileUtils.get_data (files[(i + thread_no) % files.length], out data);
+                        Client.Cachier.Storager.simple_dencode_public (ref data);
+                        var stream = new MemoryInputStream.from_data (data);
+                        var pixbuf = new Gdk.Pixbuf.from_stream (stream);
+                        if (pixbuf != null) {
+                            ok++;
+                        }
+                    } catch (Error e) {
+                        // decode errors are fine here; a crash is what we look for
+                    }
+                }
+                Idle.add_once (() => message ("pixbuf stress: thread %d done, %d decoded", thread_no, ok));
+            });
+        }
     }
 
     void debug_fonts () {

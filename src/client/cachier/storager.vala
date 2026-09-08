@@ -508,6 +508,11 @@ namespace Cassette.Client.Cachier {
          * This may cause the developer to have problems with Yandex.
          */
         void simple_dencode (ref uint8[] data) {
+            simple_dencode_public (ref data);
+        }
+
+        /** The cache obfuscation (byte-wise NOT), for tooling and tests. */
+        public static void simple_dencode_public (ref uint8[] data) {
             for (int i = 0; i < data.length; i++) {
                 data[i] = data[i] ^ 0xFF;
             }
@@ -565,6 +570,8 @@ namespace Cassette.Client.Cachier {
             return new Location.none ();
         }
 
+        static int pixbuf_lock = 0;
+
         public Gdk.Pixbuf? load_image (string image_uri) {
             Location image_location = image_cache_location (image_uri);
             if (image_location.file == null) {
@@ -578,7 +585,14 @@ namespace Cassette.Client.Cachier {
                     simple_dencode (ref idata);
 
                     var stream = new MemoryInputStream.from_data (idata);
-                    var pixbuf = new Gdk.Pixbuf.from_stream (stream);
+                    // gdk-pixbuf's loader lookup is not safe against its own
+                    // (re)initialisation from another thread; see main.vala
+                    // (GDK_PIXBUF_MODULE_FILE). Decoding one image at a time
+                    // costs a few ms per cover and removes the window entirely.
+                    Gdk.Pixbuf? pixbuf = null;
+                    lock (pixbuf_lock) {
+                        pixbuf = new Gdk.Pixbuf.from_stream (stream);
+                    }
                     stream.close ();
                     return pixbuf;
 
