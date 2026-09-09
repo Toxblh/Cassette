@@ -15,6 +15,7 @@ ar = 'ar'
 strip = 'strip'
 ranlib = 'ranlib'
 pkg-config = 'pkg-config'
+vala = '/opt/homebrew/bin/valac'
 
 [built-in options]
 c_args = ['-fno-common']

@@ -157,7 +157,7 @@ public class Cassette.StationBar : Adw.Bin {
         output_wide = new OutputButton (true);
         output_narrow = new OutputButton (false);
 
-#if ANDROID
+#if ANDROID || IOS
         back_button = new Gtk.Button.from_icon_name ("phone-symbolic");
 #else
         back_button = new Gtk.Button.from_icon_name ("computer-symbolic");

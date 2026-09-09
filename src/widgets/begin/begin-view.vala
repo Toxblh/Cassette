@@ -140,6 +140,8 @@ namespace Cassette {
             button_online_mode.sensitive = false;
 #if ANDROID
             cassette_android_auth_start (OAUTH_URL, on_native_token);
+#elif IOS
+            cassette_ios_auth_start (OAUTH_URL, on_native_token);
 #else
             cassette_macos_auth_start (OAUTH_URL, on_native_token);
 #endif

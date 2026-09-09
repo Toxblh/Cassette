@@ -181,7 +181,7 @@ namespace Cassette.Client {
         player = new Player.Player ();
         Glagol.station_manager = new Glagol.StationManager ();
 
-#if MACOS
+#if MACOS || IOS
         MacOsNowPlaying.init ();
 #elif ANDROID
         AndroidNowPlaying.init ();

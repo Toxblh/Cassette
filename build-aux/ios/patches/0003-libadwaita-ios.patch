@@ -1,0 +1,52 @@
+diff --git a/meson.build b/meson.build
+index 9f97e43..4511a8b 100644
+--- a/meson.build
++++ b/meson.build
+@@ -49,7 +49,7 @@ ministream_dep = dependency('ministream', default_options: [
+ ])
+ 
+ target_system = host_machine.system()
+-if target_system == 'darwin'
++if target_system == 'darwin' and host_machine.subsystem() == 'macos'
+   appleframework_modules = [
+     'AppKit',
+     'Foundation',
+diff --git a/src/adw-settings-impl-private.h b/src/adw-settings-impl-private.h
+index 98bb4af..913df5b 100644
+--- a/src/adw-settings-impl-private.h
++++ b/src/adw-settings-impl-private.h
+@@ -61,7 +61,7 @@ void        adw_settings_impl_set_monospace_font_name (AdwSettingsImpl *self,
+ 
+ gboolean adw_get_disable_portal (void);
+ 
+-#ifdef __APPLE__
++#if defined(__APPLE__) && defined(GDK_WINDOWING_MACOS)
+ #define ADW_TYPE_SETTINGS_IMPL_MACOS (adw_settings_impl_macos_get_type())
+ 
+ G_DECLARE_FINAL_TYPE (AdwSettingsImplMacOS, adw_settings_impl_macos, ADW, SETTINGS_IMPL_MACOS, AdwSettingsImpl)
+diff --git a/src/adw-settings.c b/src/adw-settings.c
+index dacab39..a9c5820 100644
+--- a/src/adw-settings.c
++++ b/src/adw-settings.c
+@@ -250,7 +250,7 @@ adw_settings_constructed (GObject *object)
+ 
+   init_debug (self, &found_color_scheme, &found_high_contrast, &found_accent_colors);
+ 
+-#ifdef __APPLE__
++#if defined(__APPLE__) && defined(GDK_WINDOWING_MACOS)
+   self->platform_impl = adw_settings_impl_macos_new (!found_color_scheme,
+                                                      !found_high_contrast,
+                                                      !found_accent_colors,
+diff --git a/src/meson.build b/src/meson.build
+index 6139def..f17083d 100644
+--- a/src/meson.build
++++ b/src/meson.build
+@@ -359,7 +359,7 @@ else
+   config_h.set('_ADW_EXTERN', '__attribute__((visibility("default"))) extern')
+ endif
+ 
+-if target_system == 'darwin'
++if target_system == 'darwin' and host_machine.subsystem() == 'macos'
+   libadwaita_deps += appleframeworks_dep
+   libadwaita_private_sources += [
+     'adw-settings-impl-macos.c',

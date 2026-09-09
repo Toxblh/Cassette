@@ -16,9 +16,24 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-#if ANDROID
+#if ANDROID || IOS
 [CCode (cname = "g_io_openssl_load")]
 extern void g_io_openssl_load (IOModule? module);
+#endif
+
+#if IOS
+/**
+ * Bundle-relative environment, then the same fonts and pixbuf care as
+ * Android (mobile_setup).
+ */
+void ios_setup () {
+    cassette_ios_setup_env ();
+    g_io_openssl_load (null);
+    mobile_setup ();
+}
+#endif
+
+#if ANDROID
 
 /**
  * Process environment the GTK Android runtime does not provide.
@@ -43,6 +58,16 @@ void android_setup () {
         );
     }
 
+    mobile_setup ();
+}
+#endif
+
+#if ANDROID || IOS
+/**
+ * Debug switches, gdk-pixbuf loader table and the bundled font: shared by
+ * the Android and iOS builds.
+ */
+void mobile_setup () {
     // Debug switches: `adb shell` cannot pass environment variables, so
     // KEY=VALUE lines from <app files dir>/debug.env become the environment
     // (CASSETTE_DEBUG_*, G_MESSAGES_DEBUG, ...). Absent in normal use.
@@ -87,11 +112,13 @@ void android_setup () {
         }
     }
 
+#if ANDROID
     // CASSETTE_DEBUG_STALLS=1: backtraces of the GTK thread whenever the main
     // loop stops for more than 80 ms (logcat tag CassetteStall).
     if (Environment.get_variable ("CASSETTE_DEBUG_STALLS") != null) {
         cassette_android_stalls_start ();
     }
+#endif
 
     // fontconfig defaults to /etc/fonts, which does not exist on Android;
     // the config from the fontconfig subproject lands in XDG_CONFIG_DIRS.
@@ -192,12 +219,31 @@ void android_setup_fonts () {
 }
 #endif
 
+#if IOS
+// UIKit owns the process; GTK runs on its own thread (see gdk/ios).
+int ios_main (int argc, [CCode (array_length = false)] string[] argv) {
+    string[] args = new string[argc];
+    for (int i = 0; i < argc; i++) {
+        args[i] = argv[i];
+    }
+    return cassette_main (args);
+}
+
 int main (string[] args) {
+    return gdk_ios_main (args.length, args, ios_main);
+}
+
+int cassette_main (string[] args) {
+#else
+int main (string[] args) {
+#endif
 #if ANDROID
     android_setup ();
+#elif IOS
+    ios_setup ();
 #endif
 
-#if ANDROID
+#if ANDROID || IOS
     // GNOMELOCALEDIR is the absolute install prefix, meaningless in an APK;
     // the catalogues sit next to the other data (share/locale).
     var locale_dirs = Environment.get_system_data_dirs ();

@@ -1,5 +1,12 @@
 #import <Foundation/Foundation.h>
+#import <TargetConditionals.h>
+#if TARGET_OS_IPHONE
+#import <UIKit/UIKit.h>
+typedef UIImage PlatformImage;
+#else
 #import <AppKit/AppKit.h>
+typedef NSImage PlatformImage;
+#endif
 #import <MediaPlayer/MediaPlayer.h>
 #import <glib.h>
 #import "macos-now-playing.h"
@@ -140,7 +147,7 @@ void cassette_now_playing_update(
                 dataTaskWithURL:url
                 completionHandler:^(NSData *data, NSURLResponse __unused *r, NSError *err) {
                     if (!data || err) return;
-                    NSImage *img = [[NSImage alloc] initWithData:data];
+                    PlatformImage *img = [[PlatformImage alloc] initWithData:data];
                     if (!img) return;
                     dispatch_async(dispatch_get_main_queue(), ^{
                         // Only update artwork if this generation is still active.
@@ -150,7 +157,7 @@ void cassette_now_playing_update(
                         NSMutableDictionary *updated = [cur mutableCopy];
                         MPMediaItemArtwork *art = [[MPMediaItemArtwork alloc]
                             initWithBoundsSize:img.size
-                            requestHandler:^NSImage *(CGSize __unused s) { return img; }];
+                            requestHandler:^PlatformImage *(CGSize __unused s) { return img; }];
                         updated[MPMediaItemPropertyArtwork] = art;
                         [MPNowPlayingInfoCenter defaultCenter].nowPlayingInfo = updated;
                     });

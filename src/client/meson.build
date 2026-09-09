@@ -92,6 +92,10 @@ if host_machine.system() == 'android'
   cassette_client_sources += files(
     'player/android-backend.vala',
   )
+elif is_ios
+  cassette_client_sources += files(
+    'player/ios-backend.vala',
+  )
 else
   cassette_client_sources += files(
     'player/gst-backend.vala',

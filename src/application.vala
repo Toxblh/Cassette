@@ -113,7 +113,7 @@ namespace Cassette {
 
             Cassette.Client.init (is_devel);
 
-#if !MACOS && !ANDROID
+#if !MACOS && !ANDROID && !IOS
             Cassette.Client.Mpris.mpris.quit_triggered.connect (() => {
                 quit ();
             });
@@ -228,7 +228,7 @@ namespace Cassette {
         public override void activate () {
             base.activate ();
 
-#if ANDROID
+#if ANDROID || IOS
             // Bundled font (see main.vala); 11pt = 14.7px, Android's body size.
             // CASSETTE_DEBUG_FONT_NAME overrides the UI font for font-stack tests.
             Gtk.Settings.get_default ().gtk_font_name =

@@ -218,6 +218,8 @@ public class Cassette.Client.Player.Player : Object {
 
 #if ANDROID
         backend = new AndroidPlayerBackend ();
+#elif IOS
+        backend = new IosPlayerBackend ();
 #else
         backend = new GstPlayerBackend ();
 #endif

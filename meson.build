@@ -10,6 +10,7 @@ i18n = import('i18n')
 gnome = import('gnome')
 
 is_android = host_machine.system() == 'android'
+is_ios = host_machine.system() == 'darwin' and host_machine.subsystem() in ['ios', 'ios-simulator']
 
 gtk = dependency('gtk4', version: '>= 4.15')
 libadwaita = dependency('libadwaita-1', version: '>= 1.6')
@@ -22,8 +23,9 @@ gee = dependency('gee-0.8')
 libxml = dependency('libxml-2.0')
 # Android has neither: the stream backend is android.media.MediaPlayer
 # (src/client/player/android-backend.vala) and sign-in is a WebView activity.
-gstreamer = dependency('gstreamer-1.0', required: not is_android)
-webkit = dependency('webkitgtk-6.0', required: get_option('with_webkit') and not is_android)
+# iOS has neither either: AVPlayer (src/ios/ios-player.m) and a WKWebView.
+gstreamer = dependency('gstreamer-1.0', required: not is_android and not is_ios)
+webkit = dependency('webkitgtk-6.0', required: get_option('with_webkit') and not is_android and not is_ios)
 gio = dependency('gio-2.0', version: '>= 2.72')
 
 app_id = 'space.rirusha.Cassette'
@@ -81,8 +83,8 @@ if not get_option('with_webkit') and host_machine.system() not in ['darwin', 'an
   error('with_webkit=false is only supported on macOS and Android')
 endif
 
-if is_android
-  # TLS. GIO cannot load modules out of an APK, so glib-networking's openssl
+if is_android or is_ios
+  # TLS. GIO cannot load modules out of an APK or an app bundle, so glib-networking's openssl
   # backend is linked statically and registered by hand in main.vala.
   subproject('glib-networking', default_options: ['default_library=static'])
   cassette_dependencies += dependency('gioopenssl')
@@ -121,12 +123,12 @@ config_h_dir = include_directories('.')
 
 subdir('po')
 subdir('src')
-if not is_android
+if not is_android and not is_ios
   subdir('tests')
 endif
 
 gnome.post_install(
   glib_compile_schemas: true,
-  gtk_update_icon_cache: not is_android,
-  update_desktop_database: not is_android,
+  gtk_update_icon_cache: not is_android and not is_ios,
+  update_desktop_database: not is_android and not is_ios,
 )

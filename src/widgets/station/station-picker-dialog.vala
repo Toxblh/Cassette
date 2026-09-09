@@ -74,7 +74,7 @@ public class Cassette.StationPickerDialog : Adw.Dialog {
             title = _("This device"),
             activatable = true
         };
-#if ANDROID
+#if ANDROID || IOS
         local_row.add_prefix (new Gtk.Image.from_icon_name ("phone-symbolic"));
 #else
         local_row.add_prefix (new Gtk.Image.from_icon_name ("computer-symbolic"));

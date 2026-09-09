@@ -133,13 +133,13 @@ cassette_vala_args = [
   '--vapidir', meson.current_source_dir()
 ] + webkit_vala_args
 
-if is_android
+if is_android or is_ios
   # The libraries come from subprojects, so meson passes no --pkg for them;
   # valac finds the vapis in its own vapidir, except libadwaita-1 and
   # libsoup-3.0 which the libraries themselves ship — snapshots of those
   # live in build-aux/android/vapi.
   cassette_vala_args += [
-    '--define=ANDROID',
+    is_android ? '--define=ANDROID' : '--define=IOS',
     '--vapidir', meson.project_source_root() / 'build-aux' / 'android' / 'vapi',
     '--pkg=gtk4',
     '--pkg=libadwaita-1',
@@ -165,7 +165,31 @@ cassette_c_args += [
 cassette_link_args = ['-lm']
 
 macos_inc = []
-if host_machine.system() == 'darwin'
+ios_inc = []
+if is_ios
+  # Shares the MediaPlayer now-playing bridge with macOS; player and
+  # sign-in are UIKit-specific (src/ios).
+  cassette_sources += files(
+    'macos/macos-now-playing.m',
+    'macos/macos-now-playing.vapi',
+    'macos/now-playing.vala',
+    'ios/ios-runtime.m',
+    'ios/ios-runtime.vapi',
+    'ios/ios-player.m',
+    'ios/ios-player.vapi',
+    'ios/ios-auth.m',
+    'ios/ios-auth.vapi',
+  )
+  cassette_link_args += ['-framework', 'MediaPlayer', '-framework', 'AVFoundation', '-framework', 'CoreMedia', '-framework', 'UIKit',
+                         '-framework', 'WebKit', '-framework', 'Foundation', '-framework', 'QuartzCore',
+                         '-framework', 'CoreGraphics']
+  cassette_c_args += ['-fobjc-arc']
+  macos_inc = include_directories('macos')
+  ios_inc = include_directories('ios')
+  # Static libadwaita: its GResource registration lives in a constructor
+  # nothing references, so the linker would drop it. Pull the archive whole.
+  cassette_link_args += ['-Wl,-force_load,' + meson.project_build_root() / 'subprojects' / 'libadwaita' / 'src' / 'libadwaita-1.a']
+elif host_machine.system() == 'darwin'
   cassette_vala_args += ['--define=MACOS']
   cassette_sources += files(
     'macos/macos-now-playing.m',
@@ -211,7 +235,7 @@ endif
 executable(
   meson.project_name(),
   cassette_sources,
-  include_directories: [config_h_dir, macos_inc, android_inc],
+  include_directories: [config_h_dir, macos_inc, android_inc, ios_inc],
   vala_args: cassette_vala_args,
   c_args: cassette_c_args,
   link_args: cassette_link_args,
