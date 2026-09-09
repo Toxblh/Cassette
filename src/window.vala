@@ -347,8 +347,11 @@ public class Cassette.Window : ApplicationWindow {
             if (is_tiny != tiny) {
                 is_tiny = tiny;
             }
-            // The overlay sidebar's minimum is the window's minimum too.
-            int sidebar_min = tiny ? 260 : 360;
+            // The overlay sidebar's minimum is the window's minimum too, and
+            // on a phone the window cannot be wider than the screen: a
+            // 340-359 dp screen (foldable covers) otherwise gets a 360 dp
+            // window, cut on both sides and scrolling sideways.
+            int sidebar_min = int.min (tiny ? 260 : 360, width);
             if (sidebar.min_sidebar_width != sidebar_min) {
                 sidebar.min_sidebar_width = sidebar_min;
             }
@@ -422,6 +425,10 @@ public class Cassette.Window : ApplicationWindow {
                 measure (Gtk.Orientation.HORIZONTAL, -1, out min, out nat, null, null);
                 message ("window min width %d, nat %d, allocated %d", min, nat, get_width ());
                 debug_measure_tree (this, int.parse (debug_measure), 0);
+                // Scrolled windows hide their child's minimum from the window:
+                // report every one whose content is wider than its viewport
+                // (that is where a horizontal scrollbar comes from).
+                debug_scrolled_windows (this);
                 // The bars are hidden until something plays; measure them anyway.
                 player_bar.measure (Gtk.Orientation.HORIZONTAL, -1, out min, out nat, null, null);
                 message ("player bar (%s) min %d nat %d", player_bar.multi_layout.layout_name, min, nat);
@@ -521,6 +528,29 @@ public class Cassette.Window : ApplicationWindow {
     }
 
     // Below this width the player bar drops to its two-row phone layout.
+    void debug_scrolled_windows (Gtk.Widget widget) {
+        for (var child = widget.get_first_child (); child != null; child = child.get_next_sibling ()) {
+            if (child is Gtk.ScrolledWindow) {
+                var sw = (Gtk.ScrolledWindow) child;
+                var content = sw.child;
+                int min = 0, nat = 0;
+                if (content != null) {
+                    content.measure (Gtk.Orientation.HORIZONTAL, -1, out min, out nat, null, null);
+                }
+                var adj = sw.hadjustment;
+                message ("scrolled %s: width %d, child %s min %d nat %d, hadj upper %.0f page %.0f%s",
+                    sw.name ?? "", sw.get_width (),
+                    content != null ? content.get_type ().name () : "none", min, nat,
+                    adj.upper, adj.page_size,
+                    adj.upper > adj.page_size + 0.5 ? "  <-- HORIZONTAL SCROLL" : "");
+                if (content is TrackList) {
+                    debug_measure_tree (content, sw.get_width (), 1);
+                }
+            }
+            debug_scrolled_windows (child);
+        }
+    }
+
     void debug_sensitive_tree (Gtk.Widget widget, int depth) {
         if (depth > 6) {
             return;
