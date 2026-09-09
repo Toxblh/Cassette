@@ -89,15 +89,41 @@ namespace Cassette {
          * state to the active layout's content.
          */
         void sync_layout_sensitivity () {
-            var layout = multi_layout.get_layout_by_name (multi_layout.layout_name);
-            if (layout == null || layout.content == null) {
-                return;
+            int fixed = sync_sensitivity_tree (multi_layout, is_sensitive ());
+            if (Environment.get_variable ("CASSETTE_DEBUG_SENSITIVE") != null) {
+                message ("player bar sync (%s): %d stale flags fixed", multi_layout.layout_name, fixed);
             }
-            if (sensitive) {
-                layout.content.unset_state_flags (Gtk.StateFlags.INSENSITIVE);
-            } else {
-                layout.content.set_state_flags (Gtk.StateFlags.INSENSITIVE, false);
+            // Slot children are reparented by the layout view and by the
+            // carousel later in the same frame; run once more when idle.
+            Idle.add_once (() => {
+                int late = sync_sensitivity_tree (multi_layout, is_sensitive ());
+                if (late > 0 && Environment.get_variable ("CASSETTE_DEBUG_SENSITIVE") != null) {
+                    message ("player bar late sync (%s): %d stale flags fixed", multi_layout.layout_name, late);
+                }
+            });
+        }
+
+        /**
+         * Makes every widget's insensitive flag agree with its own
+         * `sensitive` property and its parent's effective state. GTK only
+         * recurses into children whose parent flags changed, so widgets
+         * that were reparented (layout slots) keep a stale flag otherwise.
+         */
+        static int sync_sensitivity_tree (Gtk.Widget widget, bool parent_sensitive) {
+            bool effective = parent_sensitive && widget.sensitive;
+            int fixed = 0;
+            if (effective != widget.is_sensitive ()) {
+                fixed++;
+                // unset_state_flags (INSENSITIVE) turns into set_sensitive (),
+                // a no-op when the property already agrees: toggle it so that
+                // GTK recomputes and propagates the state to the subtree.
+                widget.sensitive = !widget.sensitive;
+                widget.sensitive = !widget.sensitive;
             }
+            for (var child = widget.get_first_child (); child != null; child = child.get_next_sibling ()) {
+                fixed += sync_sensitivity_tree (child, effective);
+            }
+            return fixed;
         }
 
         public Window window { get; construct set; }
