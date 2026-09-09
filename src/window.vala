@@ -365,6 +365,39 @@ public class Cassette.Window : ApplicationWindow {
                     player_bar.sensitive.to_string (), player_bar.is_sensitive ().to_string (),
                     player.current_track_loading.to_string (),
                     player_bar.get_width (), player_bar.get_height (), get_width (), get_height ());
+                var clock = get_frame_clock ();
+                if (clock != null) {
+                    var timings = clock.get_current_timings ();
+                    message ("  frame clock: frame_time %s, monotonic %s, diff %s us, refresh %s us",
+                        clock.get_frame_time ().to_string (), get_monotonic_time ().to_string (),
+                        (clock.get_frame_time () - get_monotonic_time ()).to_string (),
+                        timings != null ? timings.get_refresh_interval ().to_string () : "-");
+                }
+                // Computed CSS of the bar and its toolbar parent (filter, transitions).
+                for (Gtk.Widget? w = player_bar; w != null; w = w.parent) {
+                    if (w.get_css_classes ().length > 0 && "bottom-bar" in string.joinv (",", w.get_css_classes ())) {
+                        foreach (var line in w.get_first_child ().get_style_context ().to_string (Gtk.StyleContextPrintFlags.SHOW_STYLE).split ("\n")) {
+                            if ("filter" in line || "transition" in line || "opacity" in line) {
+                                message ("  css(%s child): %s", w.get_type ().name (), line.strip ());
+                            }
+                        }
+                    }
+                }
+                foreach (var line in player_bar.get_style_context ().to_string (Gtk.StyleContextPrintFlags.SHOW_STYLE).split ("\n")) {
+                    if ("filter" in line || "transition" in line || "opacity" in line) {
+                        message ("  css(bar): %s", line.strip ());
+                    }
+                }
+                for (Gtk.Widget? w = player_bar; w != null; w = w.parent) {
+                    var flags = w.get_state_flags ();
+                    message ("  up: %s%s opacity=%.2f flags=0x%x%s%s classes=%s",
+                        w.get_type ().name (),
+                        w.name != null && w.name != w.get_type ().name () ? "(" + w.name + ")" : "",
+                        w.opacity, (uint) flags,
+                        (flags & Gtk.StateFlags.BACKDROP) != 0 ? " BACKDROP" : "",
+                        (flags & Gtk.StateFlags.INSENSITIVE) != 0 ? " INSENSITIVE" : "",
+                        string.joinv (",", w.get_css_classes ()));
+                }
                 debug_sensitive_tree (player_bar, 0);
                 return Source.CONTINUE;
             });
@@ -498,13 +531,20 @@ public class Cassette.Window : ApplicationWindow {
             }
             Graphene.Rect bounds;
             child.compute_bounds (this, out bounds);
-            message ("%*s%s%s sens=%s eff=%s opacity=%.2f at %.0f,%.0f %.0fx%.0f",
+            var flags = child.get_state_flags ();
+            message ("%*s%s%s sens=%s eff=%s opacity=%.2f flags=0x%x%s at %.0f,%.0f %.0fx%.0f",
                 depth * 2, "", child.get_type ().name (),
                 child.name != null && child.name != child.get_type ().name () ? "(" + child.name + ")" : "",
                 child.sensitive.to_string (), child.is_sensitive ().to_string (), child.opacity,
+                (uint) flags, (flags & Gtk.StateFlags.BACKDROP) != 0 ? " BACKDROP" : "",
                 bounds.origin.x, bounds.origin.y, bounds.size.width, bounds.size.height);
-            if (child is Gtk.Button || child is Gtk.Scale) {
-                continue;
+            if (child is Gtk.Image || child is Gtk.Label) {
+                foreach (var line in child.get_style_context ().to_string (Gtk.StyleContextPrintFlags.SHOW_STYLE).split ("\n")) {
+                    var t = line.strip ();
+                    if (t.has_prefix ("filter") || t.has_prefix ("-gtk-icon-filter") || t.has_prefix ("opacity") || t.has_prefix ("color:")) {
+                        message ("%*s  css: %s", depth * 2, "", t);
+                    }
+                }
             }
             debug_sensitive_tree (child, depth + 1);
         }
