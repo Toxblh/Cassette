@@ -177,4 +177,9 @@ CASSETTE_DEBUG_MEASURE=280`, на эмуляторе `adb shell wm size 1212x163
   `ios-backend` в этом чекауте, патч в `build-aux/ios/patches`). Hello-приложение на GTK 4 рисуется и
   реагирует на тапы в симуляторе iPhone 17 (iOS 26.5). Поток GTK отдельный, UIKit на главном; рендер
   только cairo → CGImage → CALayer. Как собрать, запустить и снять логи/скриншот: `build-aux/ios/README.md`.
-  Cassette под iOS ещё не собирается (нужны libsoup/TLS/gstreamer-замена/клавиатура).
+  Cassette собирается и работает в симуляторе (`setup-cassette.sh`, `package-cassette.sh`): сессия,
+  станции, поиск, плеер на AVPlayer (`src/ios/ios-player.m`), вход через WKWebView (`src/ios/ios-auth.m`),
+  экранная клавиатура (`gtk/gtkimcontextios.c`), safe area и цвета полос, русский язык. Не сделано:
+  реальное устройство, иконка, проверка пульта/экрана блокировки, GL. Гочи: статическую libadwaita
+  надо `-force_load` (ресурсы в конструкторе); `simctl launch --console-pty` нельзя убивать (умрёт
+  приложение); логи GLib зеркалятся в NSLog, читать `log show --predicate 'process == "Cassette"'`.

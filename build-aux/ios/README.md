@@ -1,9 +1,13 @@
 # Cassette on iOS: experimental
 
 GTK has no iOS backend, so this directory carries one plus the build flow
-that gets a GTK 4 app into the iPhone simulator. State of things: a hello
-app (labels, button, switch, entry) renders and reacts to touches; Cassette
-itself is not built for iOS yet.
+that gets a GTK 4 app into the iPhone simulator. State of things: Cassette
+runs in the simulator with a signed-in session (stations, playlists,
+artwork, search, playback through AVPlayer, Russian UI, on-screen
+keyboard); the WKWebView sign-in opens but was not driven to the end.
+Not done: real devices (signing), app icon, media keys/lock screen
+(MPRemoteCommandCenter is wired but untested), background audio checks,
+GL rendering, clipboard.
 
 ## Layout
 
@@ -32,10 +36,42 @@ itself is not built for iOS yet.
 - Input: `touchesBegan/…` → `gdk_touch_event_new`; the first finger
   emulates the pointer. A GDK grab (autohide popup) makes the root view's
   `hitTest:` return the grabbed view, so outside taps reach the popup.
-- Missing: GL/Metal, clipboard, on-screen keyboard (an `UIKeyInput` view is
-  the plan), safe-area insets, `CADisplayLink` frame pacing, real devices.
+- Keyboard: `GtkIMContextIos` (gtk/gtkimcontextios.c) + `gdkiostextinput.c`,
+  a hidden `UIKeyInput` responder; typed text is committed, backspace and
+  return become key events; the root view shrinks toplevels above the
+  keyboard (safe area minus keyboard frame). `gdk_ios_set_bars_colors()`
+  paints the status-bar and home-indicator strips.
+- Missing: GL/Metal, clipboard, `CADisplayLink` frame pacing, real devices.
 
-## Flow
+## Cassette
+
+```sh
+build-aux/ios/setup-cassette.sh          # meson setup build-ios (cross, static, all subprojects)
+ninja -C build-ios
+build-aux/ios/package-cassette.sh build-ios <udid>   # stage install → Cassette.app, simctl install
+SIMCTL_CHILD_G_MESSAGES_DEBUG=space.rirusha.Cassette xcrun simctl launch <udid> space.rirusha.cassette
+```
+
+Platform pieces live in `src/ios` (`ios-runtime.m` environment shim,
+`ios-player.m` AVPlayer, `ios-auth.m` WKWebView sheet) and the MediaPlayer
+now-playing bridge is shared with macOS (`src/macos/macos-now-playing.m`).
+`main.vala` enters through `gdk_ios_main`; `ios_setup` maps XDG dirs onto
+the bundle (`share/`, `etc/`) and the container (Application Support,
+Caches), loads the static OpenSSL GIO module and points OpenSSL at the
+bundled `cacert.pem`. Static libadwaita must be force-loaded (its resource
+registration is a constructor nothing references). Meson patches beyond
+GTK: libadwaita (`patches/0003`, AppKit only on macOS, portal settings path
+on iOS) and GLib (`patches/0002`).
+
+To test with an existing session copy `~/.local/share/cassette/cassette.db`
+(token in `additional.oauth_token`) into the container's
+`Library/Application Support/cassette/share/cassette/` and set
+`application-state='online'` in `.../cassette/config/glib-2.0/settings/keyfile`
+(`xcrun simctl get_app_container <udid> space.rirusha.cassette data`).
+Russian UI: `xcrun simctl spawn <udid> defaults write "Apple Global Domain" AppleLanguages -array ru en`.
+`SIMCTL_CHILD_GDK_IOS_DEBUG_TYPE="ms:text"` types on the keyboard responder.
+
+## Flow (hello app)
 
 ```sh
 build-aux/ios/setup-hello.sh            # meson setup build-ios-hello
