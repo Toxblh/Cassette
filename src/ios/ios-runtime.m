@@ -40,6 +40,23 @@ cassette_ios_setup_env (void)
   g_mkdir_with_parents (g_getenv ("XDG_CONFIG_HOME"), 0755);
   g_mkdir_with_parents (g_getenv ("XDG_CACHE_HOME"), 0755);
 
+  /* Translations: gettext reads LANGUAGE/LANG, iOS keeps the preference
+   * in NSLocale ("ru-RU", "en-US", ...). */
+  NSString *preferred = [[NSLocale preferredLanguages] firstObject];
+  if (preferred.length > 0 && g_getenv ("LANGUAGE") == NULL)
+    {
+      NSString *lang = [[preferred componentsSeparatedByString:@"-"] firstObject];
+      char *posix = g_strdup_printf ("%s_%s.UTF-8", lang.UTF8String,
+                                     [[[preferred stringByReplacingOccurrencesOfString:@"-" withString:@"_"]
+                                        componentsSeparatedByString:@"_"] count] > 1
+                                       ? [[[preferred componentsSeparatedByString:@"-"] objectAtIndex:1] UTF8String]
+                                       : [[lang uppercaseString] UTF8String]);
+      g_setenv ("LANGUAGE", lang.UTF8String, TRUE);
+      g_setenv ("LC_MESSAGES", posix, TRUE);
+      g_setenv ("LANG", posix, TRUE);
+      g_free (posix);
+    }
+
   /* OpenSSL has no CA store on iOS; the bundle carries Mozilla's. */
   char *cacert = g_build_filename (bundle, "cacert.pem", NULL);
   if (g_file_test (cacert, G_FILE_TEST_EXISTS))

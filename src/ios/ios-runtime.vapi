@@ -9,3 +9,6 @@ public extern void cassette_ios_setup_env ();
 
 [CCode (cname = "cassette_ios_bundle_path", cheader_filename = "ios-runtime.h")]
 public extern unowned string cassette_ios_bundle_path ();
+
+[CCode (cname = "gdk_ios_set_bars_colors", cheader_filename = "gdk/ios/gdkios.h")]
+public extern void gdk_ios_set_bars_colors (uint32 top_argb, uint32 bottom_argb);

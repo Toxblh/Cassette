@@ -112,7 +112,7 @@ public class Cassette.Window : ApplicationWindow {
         Object (application: app);
     }
 
-#if ANDROID
+#if ANDROID || IOS
     // libadwaita's raised (header bar) and flat (window) colours, dark and light.
     const uint32 BARS_RAISED_DARK = (uint32) 0xff2e2e32;
     const uint32 BARS_FLAT_DARK = (uint32) 0xff222226;
@@ -132,7 +132,11 @@ public class Cassette.Window : ApplicationWindow {
 
         bool player_bar_is_bottom = player_bar_toolbar.reveal_bottom_bars && !switcher_toolbar.reveal_bottom_bars;
 
+#if ANDROID
         cassette_android_set_bars_colors (raised, player_bar_is_bottom ? raised : flat);
+#else
+        gdk_ios_set_bars_colors (raised, player_bar_is_bottom ? raised : flat);
+#endif
     }
 #endif
 
@@ -398,7 +402,7 @@ public class Cassette.Window : ApplicationWindow {
             Cassette.application.show_message (text);
         });
 
-#if ANDROID
+#if ANDROID || IOS
         update_android_bars ();
         player_bar_toolbar.notify["reveal-bottom-bars"].connect (update_android_bars);
         switcher_toolbar.notify["reveal-bottom-bars"].connect (update_android_bars);
