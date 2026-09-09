@@ -356,6 +356,20 @@ public class Cassette.Window : ApplicationWindow {
 
         Client.Glagol.station_manager.connection_changed.connect (update_output_bar);
 
+        // CASSETTE_DEBUG_SENSITIVE=1: every 3 s, log the sensitivity of the
+        // player bar and its row widgets (phones showed a half-disabled bar).
+        if (Environment.get_variable ("CASSETTE_DEBUG_SENSITIVE") != null) {
+            Timeout.add_seconds (3, () => {
+                message ("player bar: layout %s, sensitive %s, effective %s, loading %s, size %dx%d, window %dx%d",
+                    player_bar.multi_layout.layout_name,
+                    player_bar.sensitive.to_string (), player_bar.is_sensitive ().to_string (),
+                    player.current_track_loading.to_string (),
+                    player_bar.get_width (), player_bar.get_height (), get_width (), get_height ());
+                debug_sensitive_tree (player_bar, 0);
+                return Source.CONTINUE;
+            });
+        }
+
         // Manual UI testing without clicking: CASSETTE_DEBUG_STATION=<device id>
         // connects to that station after start-up; CASSETTE_DEBUG_PICKER=1 opens
         // the picker. Both are ignored when unset.
@@ -474,6 +488,28 @@ public class Cassette.Window : ApplicationWindow {
     }
 
     // Below this width the player bar drops to its two-row phone layout.
+    void debug_sensitive_tree (Gtk.Widget widget, int depth) {
+        if (depth > 6) {
+            return;
+        }
+        for (var child = widget.get_first_child (); child != null; child = child.get_next_sibling ()) {
+            if (!child.visible) {
+                continue;
+            }
+            Graphene.Rect bounds;
+            child.compute_bounds (this, out bounds);
+            message ("%*s%s%s sens=%s eff=%s opacity=%.2f at %.0f,%.0f %.0fx%.0f",
+                depth * 2, "", child.get_type ().name (),
+                child.name != null && child.name != child.get_type ().name () ? "(" + child.name + ")" : "",
+                child.sensitive.to_string (), child.is_sensitive ().to_string (), child.opacity,
+                bounds.origin.x, bounds.origin.y, bounds.size.width, bounds.size.height);
+            if (child is Gtk.Button || child is Gtk.Scale) {
+                continue;
+            }
+            debug_sensitive_tree (child, depth + 1);
+        }
+    }
+
     /** Window narrower than PLAYER_BAR_TINY_WIDTH: rows and bars drop secondary controls. */
     public bool is_tiny { get; set; default = false; }
 

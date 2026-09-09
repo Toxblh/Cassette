@@ -77,6 +77,27 @@ namespace Cassette {
 
         void apply_layout () {
             multi_layout.layout_name = tiny ? "tiny" : compact ? "narrow" : "wide";
+            sync_layout_sensitivity ();
+        }
+
+        /**
+         * GTK propagates the insensitive state only to the children present
+         * at the time. A layout that was detached (MultiLayoutView keeps
+         * inactive layouts unparented) while the bar was insensitive comes
+         * back with the stale flag and every control in it greyed out: the
+         * "dead player bar in landscape" on phones. Re-apply the bar's own
+         * state to the active layout's content.
+         */
+        void sync_layout_sensitivity () {
+            var layout = multi_layout.get_layout_by_name (multi_layout.layout_name);
+            if (layout == null || layout.content == null) {
+                return;
+            }
+            if (sensitive) {
+                layout.content.unset_state_flags (Gtk.StateFlags.INSENSITIVE);
+            } else {
+                layout.content.set_state_flags (Gtk.StateFlags.INSENSITIVE, false);
+            }
         }
 
         public Window window { get; construct set; }
@@ -97,6 +118,7 @@ namespace Cassette {
         construct {
             notify["compact"].connect (apply_layout);
             notify["tiny"].connect (apply_layout);
+            notify["sensitive"].connect (sync_layout_sensitivity);
             player.stopped.connect (() => {
                 slider.set_value (0.0d);
             });
