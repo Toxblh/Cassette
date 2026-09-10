@@ -118,6 +118,10 @@ void mobile_setup () {
     if (Environment.get_variable ("CASSETTE_DEBUG_STALLS") != null) {
         cassette_android_stalls_start ();
     }
+#elif IOS
+    if (Environment.get_variable ("CASSETTE_DEBUG_STALLS") != null) {
+        cassette_ios_stalls_start ();
+    }
 #endif
 
     // fontconfig defaults to /etc/fonts, which does not exist on Android;

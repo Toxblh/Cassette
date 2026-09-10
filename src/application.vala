@@ -34,8 +34,8 @@ namespace Cassette {
 
     public enum ApplicationState {
         BEGIN,
-        LOCAL,
         ONLINE,
+        LOCAL,
         OFFLINE
     }
 

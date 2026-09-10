@@ -266,22 +266,31 @@ namespace Cassette.Client {
         }
 
         Bytes run_sync (Message msg) throws ClientError, BadStatusCodeError {
-            Bytes bytes = null;
+            Bytes? result = null;
+            ClientError? client_error = null;
+            BadStatusCodeError? status_error = null;
+            var loop = new MainLoop ();
 
-            try {
-                bytes = session.send_and_read (msg);
+            run_async.begin (msg, Priority.DEFAULT, (obj, res) => {
+                try {
+                    result = run_async.end (res);
+                } catch (ClientError e) {
+                    client_error = e;
+                } catch (BadStatusCodeError e) {
+                    status_error = e;
+                }
+                loop.quit ();
+            });
+            loop.run ();
 
-            } catch (Error e) {
-                throw new ClientError.SOUP_ERROR ("%s %s: %s".printf (
-                    msg.method,
-                    msg.uri.to_string (),
-                    e.message
-                ));
+            if (client_error != null) {
+                throw client_error;
+            }
+            if (status_error != null) {
+                throw status_error;
             }
 
-            check_status_code (msg, bytes);
-
-            return bytes;
+            return (!) result;
         }
 
         async Bytes? run_async (
@@ -294,10 +303,12 @@ namespace Cassette.Client {
                 bytes = yield session.send_and_read_async (msg, priority, null);
 
             } catch (Error e) {
-                throw new ClientError.SOUP_ERROR ("%s %s: %s".printf (
+                throw new ClientError.SOUP_ERROR ("%s %s: %s (code %d, domain %s)".printf (
                     msg.method,
                     msg.uri.to_string (),
-                    e.message
+                    e.message,
+                    e.code,
+                    e.domain.to_string ()
                 ));
             }
 

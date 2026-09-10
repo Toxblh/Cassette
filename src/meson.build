@@ -175,6 +175,7 @@ if is_ios
     'macos/now-playing.vala',
     'ios/ios-runtime.m',
     'ios/ios-runtime.vapi',
+    'ios/ios-stalls.c',
     'ios/ios-player.m',
     'ios/ios-player.vapi',
     'ios/ios-auth.m',
