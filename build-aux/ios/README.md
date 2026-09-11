@@ -2,12 +2,15 @@
 
 GTK has no iOS backend, so this directory carries one plus the build flow
 that gets a GTK 4 app into the iPhone simulator. State of things: Cassette
-runs in the simulator with a signed-in session (stations, playlists,
-artwork, search, playback through AVPlayer, Russian UI, on-screen
-keyboard, copy/paste); the WKWebView sign-in opens but was not driven to
-the end. Not done: real devices (signing), app icon, media keys/lock
+runs in the simulator and on a real device (signed with a development
+profile) with a signed-in session (stations, playlists, artwork, search,
+playback through AVPlayer, Russian UI, on-screen keyboard, copy/paste);
+the WKWebView sign-in opens but was not driven to the end. The app icon
+is a layered asset catalog (`assets/`) with light/dark/tinted variants,
+compiled by `actool` in the package scripts. Not done: media keys/lock
 screen (MPRemoteCommandCenter is wired but untested), background audio
-checks, GL rendering.
+checks, GL rendering, App Store distribution (needs a distribution
+profile and, for TestFlight, an App Store Connect app record).
 
 ## Layout
 

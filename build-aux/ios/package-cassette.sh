@@ -51,8 +51,17 @@ cat > "$APP/Info.plist" <<XML
   <string>UIInterfaceOrientationLandscapeRight</string>
 </array>
 <key>UIViewControllerBasedStatusBarAppearance</key><true/>
+<key>CFBundleIconName</key><string>AppIcon</string>
+<key>CFBundleIcons</key><dict><key>CFBundlePrimaryIcon</key><dict><key>CFBundleIconFiles</key><array><string>AppIcon60x60</string></array><key>CFBundleIconName</key><string>AppIcon</string></dict></dict>
+<key>CFBundleIcons~ipad</key><dict><key>CFBundlePrimaryIcon</key><dict><key>CFBundleIconFiles</key><array><string>AppIcon60x60</string><string>AppIcon76x76</string></array><key>CFBundleIconName</key><string>AppIcon</string></dict></dict>
 </dict></plist>
 XML
+
+# App icon (asset catalog -> Assets.car + legacy .png variants)
+xcrun actool "$HERE/assets" --compile "$APP" \
+  --platform iphonesimulator --minimum-deployment-target 17.0 \
+  --app-icon AppIcon --output-partial-info-plist "$BUILD/actool-icon.plist" \
+  --target-device iphone --target-device ipad >/dev/null
 
 codesign -s - --force --deep "$APP" >/dev/null 2>&1 || true
 xcrun simctl install "$UDID" "$APP"

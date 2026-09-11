@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none"
+     xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="1024" y2="1024">
+      <stop offset="0" stop-color="#cfcfd4"/>
+      <stop offset="1" stop-color="#b4b4bb"/>
+    </linearGradient>
+    <linearGradient id="body" gradientUnits="userSpaceOnUse" x1="512" y1="344" x2="512" y2="784">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#ececf0"/>
+    </linearGradient>
+    <mask id="holes">
+      <rect width="1024" height="1024" fill="#ffffff"/>
+      <circle cx="384" cy="600" r="104" fill="#000000"/>
+      <circle cx="640" cy="600" r="104" fill="#000000"/>
+      <circle cx="300" cy="716" r="18" fill="#000000"/>
+      <circle cx="512" cy="716" r="18" fill="#000000"/>
+      <circle cx="724" cy="716" r="18" fill="#000000"/>
+    </mask>
+  </defs>
+  <rect width="1024" height="1024" fill="url(#bg)"/>
+  <g mask="url(#holes)">
+    <rect x="152" y="344" width="720" height="440" rx="72" fill="url(#body)"/>
+  </g>
+  <circle cx="384" cy="600" r="42" fill="#ffffff"/>
+  <circle cx="640" cy="600" r="42" fill="#ffffff"/>
+  <rect x="248" y="392" width="528" height="150" rx="40" fill="#8a8a90"/>
+</svg>
