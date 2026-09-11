@@ -225,6 +225,33 @@ public class Cassette.Window : ApplicationWindow {
             }
         });
 
+#if ANDROID || IOS
+        // Scrolling the page dismisses the on-screen keyboard: a drag over
+        // the content takes focus away from whatever text field has it.
+        // Touch scrolling is a drag gesture (not a scroll event), and
+        // adjustments also move on programmatic scrolls, so watch the
+        // gesture itself. Capture phase: the page's scrolled windows own
+        // the sequence, so a bubbling controller would not see it.
+        var unfocus_on_scroll = new Gtk.GestureDrag ();
+        unfocus_on_scroll.set_propagation_phase (Gtk.PropagationPhase.CAPTURE);
+        unfocus_on_scroll.drag_begin.connect ((start_x, start_y) => {
+            var focus = get_focus ();
+            if (focus == null || !(focus is Gtk.Editable)) {
+                return;
+            }
+            // A drag that starts on the field itself selects text: keep focus.
+            var start = Graphene.Point () { x = (float) start_x, y = (float) start_y };
+            Graphene.Point in_focus;
+            if (main_stack.compute_point (focus, start, out in_focus) &&
+                focus.contains ((double) in_focus.x, (double) in_focus.y)) {
+                return;
+            }
+            debug ("window: content scroll unfocuses %s", focus.get_type ().name ());
+            set_focus (null);
+        });
+        main_stack.add_controller (unfocus_on_scroll);
+#endif
+
         // CASSETTE_DEBUG_SHOT=<file.png>: render the window from inside GTK
         // (screen capture needs permissions a terminal rarely has).
         var shot = Environment.get_variable ("CASSETTE_DEBUG_SHOT");
@@ -757,7 +784,8 @@ public class Cassette.Window : ApplicationWindow {
             }
         }
         string[] samples = {
-            "Play next 3:27", "Карнавал SØMN", "<b>Bold Latin</b>", "<span weight=\"300\">Light</span>",
+            "Play next 3:27", "Карнавал SØMN", "開 關 中文 日本語 漢字 テスト", "<b>Bold Latin</b>",
+            "<span weight=\"300\">Light</span>",
             "<span font_family=\"Press Start 2P\">Test</span>"
         };
         foreach (var sample in samples) {

@@ -112,16 +112,14 @@ public class Cassette.ActionCardStation : ActionCardCustom {
         content_label.label = station_info.name;
         content_image.icon_name = station_info.icon.get_internal_icon_name (station_info.id.normal);
 
-        var gs = new Gtk.EventControllerMotion ();
-        gs.enter.connect (() => {
-            image_stack.visible_child_name = "play-mark";
-        });
-        gs.leave.connect (() => {
-            if (!play_mark_context.is_current_playing) {
+        notify["hovered"].connect (() => {
+            if (hovered) {
+                image_stack.visible_child_name = "play-mark";
+
+            } else if (!play_mark_context.is_current_playing) {
                 image_stack.visible_child_name = "image";
             }
         });
-        add_controller (gs);
 
         if (yam_talker.me == null) {
             block_widget (this, BlockReason.NEED_AUTH);
@@ -137,7 +135,7 @@ public class Cassette.ActionCardStation : ActionCardCustom {
             if (play_mark_context.is_current_playing) {
                 image_stack.visible_child_name = "play-mark";
 
-            } else {
+            } else if (!hovered) {
                 image_stack.visible_child_name = "image";
             }
         });

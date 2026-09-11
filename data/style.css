@@ -180,3 +180,20 @@ track-row.playing-active {
 .station-card-playing-active {
     background-color: alpha(@accent_bg_color, 0.54);
 }
+
+/**
+ * Player bar seek slider: taller, so a finger can land on it.
+ */
+
+scale.player-progress {
+    min-height: 36px;
+}
+
+scale.player-progress trough {
+    min-height: 8px;
+}
+
+scale.player-progress slider {
+    min-width: 28px;
+    min-height: 28px;
+}
