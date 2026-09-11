@@ -88,6 +88,9 @@ namespace Cassette {
                     }
                 });
             }
+
+            // The empty "none" page must not swallow taps meant for the row.
+            can_target = false;
         }
 
         public void clear () {
@@ -145,6 +148,8 @@ namespace Cassette {
                     save_spin.stop ();
                     break;
             }
+
+            can_target = save_stack.visible_child_name != "none";
         }
     }
 }
