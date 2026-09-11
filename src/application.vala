@@ -254,6 +254,10 @@ namespace Cassette {
                 viewswitcherbar {
                     padding-bottom: 8px;
                 }
+                /* A little air above the icons, in iPhone portrait only. */
+                viewswitcherbar.portrait-pad {
+                    padding-top: 8px;
+                }
                 popover.touch-selection > contents {
                     padding: 4px;
                 }

@@ -160,6 +160,12 @@ public class Cassette.Window : ApplicationWindow {
         int top, bottom, left, right;
         gdk_ios_get_safe_area (out top, out bottom, out left, out right);
 
+        if (get_height () >= get_width ()) {
+            view_switcher.add_css_class ("portrait-pad");
+        } else {
+            view_switcher.remove_css_class ("portrait-pad");
+        }
+
         if (top == safe_top && bottom == safe_bottom && left == safe_left && right == safe_right) {
             return;
         }
