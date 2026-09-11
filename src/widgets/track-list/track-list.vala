@@ -508,6 +508,8 @@ namespace Cassette {
         Gtk.Widget clamp_row (Gtk.Widget row) {
             return new Adw.Clamp () {
                 maximum_size = row_maximum_size,
+                margin_start = 12,
+                margin_end = 12,
                 child = row
             };
         }
