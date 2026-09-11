@@ -1079,10 +1079,10 @@ index 0000000..6a518d4
 +G_END_DECLS
 diff --git a/gdk/ios/gdkiospopup.c b/gdk/ios/gdkiospopup.c
 new file mode 100644
-index 0000000..00459b0
+index 0000000..2fe49cf
 --- /dev/null
 +++ b/gdk/ios/gdkiospopup.c
-@@ -0,0 +1,181 @@
+@@ -0,0 +1,187 @@
 +/* GDK iOS backend: GdkPopup as a subview of its toplevel. SPDX-License-Identifier: LGPL-2.1-or-later */
 +
 +#include "config.h"
@@ -1116,7 +1116,13 @@ index 0000000..00459b0
 +  int shadow_left, shadow_right, shadow_top, shadow_bottom;
 +  gdk_popup_layout_get_shadow_width (layout, &shadow_left, &shadow_right, &shadow_top, &shadow_bottom);
 +
-+  GdkRectangle bounds = { 0, 0, parent_surface->width, parent_surface->height };
++  /* Keep popups inside the safe area (notch, status bar, home indicator). */
++  int safe_top, safe_bottom, safe_left, safe_right;
++  gdk_ios_get_safe_area (&safe_top, &safe_bottom, &safe_left, &safe_right);
++
++  GdkRectangle bounds = { safe_left, safe_top,
++                          parent_surface->width - safe_left - safe_right,
++                          parent_surface->height - safe_top - safe_bottom };
 +
 +  memset (&self->popup_bounds, 0, sizeof (GdkRectangle));
 +  gdk_surface_layout_popup_helper (surface, width, height,
@@ -1328,10 +1334,10 @@ index 0000000..45a4677
 +G_END_DECLS
 diff --git a/gdk/ios/gdkiosruntime.c b/gdk/ios/gdkiosruntime.c
 new file mode 100644
-index 0000000..835625a
+index 0000000..6c26170
 --- /dev/null
 +++ b/gdk/ios/gdkiosruntime.c
-@@ -0,0 +1,450 @@
+@@ -0,0 +1,455 @@
 +/*
 + * GDK iOS backend: UIKit application shell and the GTK thread.
 + *
@@ -1415,10 +1421,15 @@ index 0000000..835625a
 +
 +- (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event
 +{
-+  /* A GDK grab (autohide popups) routes every touch to the grabbed
-+   * surface, even outside it, which is how GTK learns to close menus. */
++  /* A GDK grab (autohide popups) owns touches inside the popup. Touches
++   * outside must reach the surface below, so GTK's autohide check sees a
++   * different event surface and dismisses the popup. */
 +  if (self.grabbedView != nil && !self.grabbedView.hidden && self.grabbedView.superview != nil)
-+    return self.grabbedView;
++    {
++      CGPoint in_grab = [self convertPoint:point toView:self.grabbedView];
++      if ([self.grabbedView pointInside:in_grab withEvent:event])
++        return self.grabbedView;
++    }
 +  return [super hitTest:point withEvent:event];
 +}
 +
@@ -3844,7 +3855,7 @@ index 7dd02ce..d5ab027 100644
  
  struct _GtkListViewClass
 diff --git a/gtk/gtktext.c b/gtk/gtktext.c
-index 631e881..1b0af56 100644
+index 631e881..3711b69 100644
 --- a/gtk/gtktext.c
 +++ b/gtk/gtktext.c
 @@ -2226,6 +2226,11 @@ begin_change (GtkText *self)
@@ -3867,7 +3878,15 @@ index 631e881..1b0af56 100644
    gboolean has_selection;
    int start_x, end_x;
    GtkWidget *box;
-@@ -6562,15 +6566,13 @@ gtk_text_selection_bubble_popup_show (gpointer user_data)
+@@ -6541,6 +6545,7 @@ gtk_text_selection_bubble_popup_show (gpointer user_data)
+   gtk_widget_set_parent (priv->selection_bubble, GTK_WIDGET (self));
+   gtk_widget_add_css_class (priv->selection_bubble, "touch-selection");
+   gtk_popover_set_position (GTK_POPOVER (priv->selection_bubble), GTK_POS_BOTTOM);
++  gtk_popover_set_has_arrow (GTK_POPOVER (priv->selection_bubble), FALSE);
+   gtk_popover_set_autohide (GTK_POPOVER (priv->selection_bubble), FALSE);
+   g_signal_connect (priv->selection_bubble, "notify::visible",
+                     G_CALLBACK (show_or_hide_handles), self);
+@@ -6562,15 +6567,13 @@ gtk_text_selection_bubble_popup_show (gpointer user_data)
  
    g_object_unref (model);
  
@@ -3886,7 +3905,7 @@ index 631e881..1b0af56 100644
    rect.height = text_height;
  
    if (has_selection)
-@@ -6578,12 +6580,12 @@ gtk_text_selection_bubble_popup_show (gpointer user_data)
+@@ -6578,12 +6581,12 @@ gtk_text_selection_bubble_popup_show (gpointer user_data)
        end_x = gtk_text_get_selection_bound_location (self) - priv->scroll_offset;
        end_x = CLAMP (end_x, 0, text_width);
  
