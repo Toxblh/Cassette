@@ -1,0 +1,52 @@
+default_platform(:ios)
+
+APP_IDENTIFIER = "space.rirusha.cassette"
+IOS_DIR = File.expand_path("..", __dir__)
+BUILD_DIR = File.expand_path("build", IOS_DIR)
+RELEASE_DIR = File.expand_path("../../build-ios-release", IOS_DIR)
+API_KEY_DIR = File.expand_path("~/.appstoreconnect/private_keys")
+
+# App Store Connect API key (see README). Only the .p8 is secret; the key id
+# and issuer id live in the gitignored fastlane/.env.
+def asc_key
+  app_store_connect_api_key(
+    key_id: ENV.fetch("ASC_KEY_ID"),
+    issuer_id: ENV.fetch("ASC_ISSUER_ID"),
+    key_filepath: ENV.fetch("ASC_KEY_PATH",
+      File.join(API_KEY_DIR, "AuthKey_#{ENV.fetch('ASC_KEY_ID')}.p8")),
+    duration: 1200,
+    in_house: false
+  )
+end
+
+platform :ios do
+  desc "Create or fetch the Apple Distribution certificate and App Store profile"
+  lane :certs do
+    key = asc_key
+    cert(api_key: key, development: false, output_path: BUILD_DIR)
+    sigh(
+      api_key: key,
+      app_identifier: APP_IDENTIFIER,
+      development: false,
+      output_path: BUILD_DIR,
+      filename: "AppStore.mobileprovision",
+      force: true
+    )
+  end
+
+  desc "Build and upload a TestFlight build (internal testers)"
+  lane :beta do
+    key = asc_key
+    cert(api_key: key, development: false, output_path: BUILD_DIR)
+    identity = Actions.lane_context[SharedValues::SIGNING_IDENTITY]
+    sh(File.join(IOS_DIR, "setup-cassette-release.sh"))
+    sh({ "IOS_DIST_CERT" => identity },
+       File.join(IOS_DIR, "package-cassette-testflight.sh"))
+    upload_to_testflight(
+      api_key: key,
+      ipa: File.join(RELEASE_DIR, "Cassette.ipa"),
+      skip_waiting_for_build_processing: false,
+      distribute_external: false
+    )
+  end
+end
