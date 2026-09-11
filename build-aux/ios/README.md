@@ -93,8 +93,9 @@ it. GLib messages are mirrored to `NSLog`, so `log show` sees them.
 `SIMCTL_CHILD_GDK_IOS_DEBUG_TAPS="x,y,ms;…"` synthesizes taps (points) for
 checks without a hand on the simulator; an optional fourth field is the
 hold duration in ms (`x,y,ms,hold`, e.g. for long-press selection
-bubbles). Crash reports land in
-`~/Library/Logs/DiagnosticReports/Hello-*.ips`.
+bubbles). `SIMCTL_CHILD_GDK_IOS_DEBUG_DRAGS="x1,y1,x2,y2,ms;…"`
+synthesizes a touch drag after `ms` (scrolling checks). Crash reports land
+in `~/Library/Logs/DiagnosticReports/Hello-*.ips`.
 
 Gotchas met on the way: `sassc` must be native (`brew install sassc`);
 libepoxy/pixman tests and OpenMP are disabled in the cross build; the iOS

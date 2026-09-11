@@ -1328,10 +1328,10 @@ index 0000000..45a4677
 +G_END_DECLS
 diff --git a/gdk/ios/gdkiosruntime.c b/gdk/ios/gdkiosruntime.c
 new file mode 100644
-index 0000000..409a08a
+index 0000000..4decaf0
 --- /dev/null
 +++ b/gdk/ios/gdkiosruntime.c
-@@ -0,0 +1,376 @@
+@@ -0,0 +1,432 @@
 +/*
 + * GDK iOS backend: UIKit application shell and the GTK thread.
 + *
@@ -1529,6 +1529,43 @@ index 0000000..409a08a
 +  });
 +}
 +
++static void
++gdk_ios_runtime_debug_drag (double x1, double y1, double x2, double y2)
++{
++  GdkIosRootView *root = gdk_ios_runtime_get_root_view ();
++  UIView *hit = [root hitTest:CGPointMake (x1, y1) withEvent:nil];
++  if (![hit isKindOfClass:[GdkIosSurfaceView class]])
++    {
++      NSLog (@"debug drag at %.0f,%.0f hit no surface view (%@)", x1, y1, hit);
++      return;
++    }
++  GdkIosSurfaceView *view = (GdkIosSurfaceView *) hit;
++  if (view.gdkSurface == NULL)
++    return;
++  GdkIosSurface *surface = view.gdkSurface;
++  guint sequence = (guint) g_random_int ();
++  guint32 now = (guint32) (g_get_monotonic_time () / 1000);
++  CGPoint start = [root convertPoint:CGPointMake (x1, y1) toView:view];
++  CGPoint end = [root convertPoint:CGPointMake (x2, y2) toView:view];
++  NSLog (@"debug drag %.0f,%.0f -> %.0f,%.0f on surface %p local %.0f,%.0f -> %.0f,%.0f",
++         x1, y1, x2, y2, surface, start.x, start.y, end.x, end.y);
++  gdk_ios_events_post_touch (surface, GDK_TOUCH_BEGIN, sequence, start.x, start.y, now);
++  for (int i = 1; i <= 4; i++)
++    {
++      double t = i / 4.0;
++      CGPoint p = CGPointMake (start.x + (end.x - start.x) * t,
++                               start.y + (end.y - start.y) * t);
++      dispatch_after (dispatch_time (DISPATCH_TIME_NOW, (int64_t) (i * 20) * NSEC_PER_MSEC), dispatch_get_main_queue (), ^{
++        if (view.gdkSurface == surface)
++          gdk_ios_events_post_touch (surface, GDK_TOUCH_UPDATE, sequence, p.x, p.y, now + (guint32) (i * 20));
++      });
++    }
++  dispatch_after (dispatch_time (DISPATCH_TIME_NOW, 110 * NSEC_PER_MSEC), dispatch_get_main_queue (), ^{
++    if (view.gdkSurface == surface)
++      gdk_ios_events_post_touch (surface, GDK_TOUCH_END, sequence, end.x, end.y, now + 110);
++  });
++}
++
 +@interface GdkIosAppDelegate : UIResponder <UIApplicationDelegate>
 +@end
 +
@@ -1592,6 +1629,25 @@ index 0000000..409a08a
 +            continue;
 +          dispatch_after (dispatch_time (DISPATCH_TIME_NOW, (int64_t) ms * NSEC_PER_MSEC), dispatch_get_main_queue (), ^{
 +            gdk_ios_runtime_debug_tap (x, y, hold);
++          });
++        }
++      g_strfreev (list);
++    }
++
++  /* GDK_IOS_DEBUG_DRAGS="x1,y1,x2,y2,ms;…": synthesize a touch drag (in
++   * points) after ms, for scrolling checks without hands. */
++  const char *drags = g_getenv ("GDK_IOS_DEBUG_DRAGS");
++  if (drags != NULL)
++    {
++      char **list = g_strsplit (drags, ";", -1);
++      for (int i = 0; list[i] != NULL; i++)
++        {
++          double x1 = 0, y1 = 0, x2 = 0, y2 = 0;
++          int ms = 1000;
++          if (sscanf (list[i], "%lf,%lf,%lf,%lf,%d", &x1, &y1, &x2, &y2, &ms) < 4)
++            continue;
++          dispatch_after (dispatch_time (DISPATCH_TIME_NOW, (int64_t) ms * NSEC_PER_MSEC), dispatch_get_main_queue (), ^{
++            gdk_ios_runtime_debug_drag (x1, y1, x2, y2);
 +          });
 +        }
 +      g_strfreev (list);
@@ -3600,6 +3656,165 @@ index 389a438..cc186dc 100644
  
    scope = g_io_module_scope_new (G_IO_MODULE_SCOPE_BLOCK_DUPLICATES);
  
+diff --git a/gtk/gtklistview.c b/gtk/gtklistview.c
+index d76f81f..8a61a4e 100644
+--- a/gtk/gtklistview.c
++++ b/gtk/gtklistview.c
+@@ -24,6 +24,7 @@
+ #include "gtkbitset.h"
+ #include "gtklistbaseprivate.h"
+ #include "gtklistheaderwidgetprivate.h"
++#include "gtklistitembaseprivate.h"
+ #include "gtklistitemmanagerprivate.h"
+ #include "gtklistitemwidgetprivate.h"
+ #include "gtkmultiselection.h"
+@@ -620,6 +621,7 @@ gtk_list_view_size_allocate (GtkWidget *widget,
+   GtkListTile *tile;
+   GArray *heights;
+   int min, nat, row_height, y, list_width, spacing;
++  guint position;
+   GtkOrientation orientation, opposite_orientation;
+   GtkScrollablePolicy scroll_policy, opposite_scroll_policy;
+ 
+@@ -668,7 +670,12 @@ gtk_list_view_size_allocate (GtkWidget *widget,
+         row_height = nat;
+       gtk_list_tile_set_area_size (self->item_manager, tile, list_width, row_height);
+       if (tile->type == GTK_LIST_TILE_ITEM)
+-        g_array_append_val (heights, row_height);
++        {
++          g_array_append_val (heights, row_height);
++          g_hash_table_insert (self->measured_heights,
++                               GUINT_TO_POINTER (gtk_list_item_base_get_position (GTK_LIST_ITEM_BASE (tile->widget))),
++                               GINT_TO_POINTER (row_height));
++        }
+     }
+ 
+   /* step 3: determine height of unknown items and set the positions */
+@@ -676,6 +683,7 @@ gtk_list_view_size_allocate (GtkWidget *widget,
+   g_array_free (heights, TRUE);
+ 
+   y = 0;
++  position = 0;
+   for (tile = gtk_list_item_manager_get_first (self->item_manager);
+        tile != NULL;
+        tile = gtk_rb_tree_node_get_next (tile))
+@@ -683,13 +691,26 @@ gtk_list_view_size_allocate (GtkWidget *widget,
+       gtk_list_tile_set_area_position (self->item_manager, tile, 0, y);
+       if (tile->widget == NULL)
+         {
++          /* Prefer the height an item was measured at while it was
++           * visible; only estimate the ones never seen. Otherwise the
++           * total jumps whenever a tall item (a page header) is scrolled
++           * out of the realized range and back. */
++          int tile_height = 0;
++          for (guint i = 0; i < tile->n_items; i++)
++            {
++              gpointer measured = g_hash_table_lookup (self->measured_heights,
++                                                       GUINT_TO_POINTER (position + i));
++              tile_height += measured != NULL ? GPOINTER_TO_INT (measured) : row_height;
++              if (i > 0)
++                tile_height += spacing;
++            }
+           gtk_list_tile_set_area_size (self->item_manager,
+                                        tile,
+                                        list_width,
+-                                       row_height * tile->n_items
+-                                       + spacing * (tile->n_items - 1));
++                                       tile_height);
+         }
+ 
++      position += tile->n_items;
+       y += tile->area.height + spacing;
+     }
+ 
+@@ -750,6 +771,7 @@ gtk_list_view_dispose (GObject *object)
+ 
+   g_clear_object (&self->factory);
+   g_clear_object (&self->header_factory);
++  g_clear_pointer (&self->measured_heights, g_hash_table_unref);
+ 
+   G_OBJECT_CLASS (gtk_list_view_parent_class)->dispose (object);
+ }
+@@ -1017,6 +1039,7 @@ static void
+ gtk_list_view_init (GtkListView *self)
+ {
+   self->item_manager = gtk_list_base_get_manager (GTK_LIST_BASE (self));
++  self->measured_heights = g_hash_table_new (g_direct_hash, g_direct_equal);
+ 
+   gtk_list_base_set_anchor_max_widgets (GTK_LIST_BASE (self),
+                                         GTK_LIST_VIEW_MAX_LIST_ITEMS,
+@@ -1079,9 +1102,21 @@ gtk_list_view_get_model (GtkListView *self)
+   return gtk_list_base_get_model (GTK_LIST_BASE (self));
+ }
+ 
++static void
++gtk_list_view_items_changed_cb (GListModel *model,
++                                guint       position,
++                                guint       removed,
++                                guint       added,
++                                GtkListView *self)
++{
++  /* Positions shift when items change, so remembered heights no longer
++   * line up with their rows. */
++  g_hash_table_remove_all (self->measured_heights);
++}
++
+ /**
+  * gtk_list_view_set_model:
+- * @self: a listview
++ * @self: a `GtkListView`
+  * @model: (nullable) (transfer none): the model to use
+  *
+  * Sets the model to use.
+@@ -1092,11 +1127,31 @@ void
+ gtk_list_view_set_model (GtkListView       *self,
+                          GtkSelectionModel *model)
+ {
++  GtkSelectionModel *previous;
++
+   g_return_if_fail (GTK_IS_LIST_VIEW (self));
+   g_return_if_fail (model == NULL || GTK_IS_SELECTION_MODEL (model));
+ 
++  previous = gtk_list_view_get_model (self);
++  if (previous)
++    g_object_ref (previous);
++
+   if (!gtk_list_base_set_model (GTK_LIST_BASE (self), model))
+-    return;
++    {
++      g_clear_object (&previous);
++      return;
++    }
++
++  if (previous)
++    {
++      g_signal_handlers_disconnect_by_func (previous, gtk_list_view_items_changed_cb, self);
++      g_object_unref (previous);
++    }
++
++  g_hash_table_remove_all (self->measured_heights);
++
++  if (model)
++    g_signal_connect (model, "items-changed", G_CALLBACK (gtk_list_view_items_changed_cb), self);
+ 
+   gtk_accessible_update_property (GTK_ACCESSIBLE (self),
+                                   GTK_ACCESSIBLE_PROPERTY_MULTI_SELECTABLE, GTK_IS_MULTI_SELECTION (model),
+diff --git a/gtk/gtklistviewprivate.h b/gtk/gtklistviewprivate.h
+index 7dd02ce..d5ab027 100644
+--- a/gtk/gtklistviewprivate.h
++++ b/gtk/gtklistviewprivate.h
+@@ -33,6 +33,11 @@ struct _GtkListView
+   GtkListItemFactory *header_factory;
+   gboolean show_separators;
+   gboolean single_click_activate;
++
++  /* position -> measured height of items that were realized at least
++   * once. Reused when an item is unrealized, so the total height estimate
++   * does not jump when a tall item (a page header) leaves the view. */
++  GHashTable *measured_heights;
+ };
+ 
+ struct _GtkListViewClass
 diff --git a/gtk/meson.build b/gtk/meson.build
 index df3a08c..9a8d88d 100644
 --- a/gtk/meson.build
