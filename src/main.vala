@@ -183,13 +183,28 @@ void android_setup_fonts () {
         Path.build_filename (Environment.get_user_config_dir (), "fontconfig"),
         Path.build_filename (data_dirs[0], "..", "fontconfig")
     };
+    // Inter has no CJK, emoji, etc. Those glyphs must fall back to the
+    // platform fonts, so point fontconfig at the system font directories
+    // (the bundled stock config also lists the macOS/iOS ones when present).
+    string[] system_font_dirs = {
+        "/System/Library/Fonts",
+        "/Library/Fonts",
+        "/system/fonts",
+        "/product/fonts",
+        "/vendor/fonts"
+    };
+    var extra_dirs = new StringBuilder ();
+    foreach (var dir in system_font_dirs) {
+        extra_dirs.append_printf ("  <dir>%s</dir>\n", dir);
+    }
+
     var conf = """<?xml version="1.0"?>
 <!DOCTYPE fontconfig SYSTEM "fonts.dtd">
 <!-- written by Cassette on every start; see main.vala -->
 <fontconfig>
 %s
   <dir>%s</dir>
-  <cachedir>%s</cachedir>
+%s  <cachedir>%s</cachedir>
   <alias binding="strong"><family>sans-serif</family><prefer><family>Inter</family></prefer></alias>
   <alias binding="strong"><family>Sans</family><prefer><family>Inter</family></prefer></alias>
   <alias binding="strong"><family>Cantarell</family><prefer><family>Inter</family></prefer></alias>
@@ -198,6 +213,7 @@ void android_setup_fonts () {
 """.printf (
         stock_conf != null ? "  <include ignore_missing=\"yes\">%s</include>".printf (stock_conf) : "",
         fonts_dir,
+        extra_dirs.str,
         Path.build_filename (Environment.get_user_cache_dir (), "fontconfig")
     );
 

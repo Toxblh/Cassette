@@ -19,7 +19,9 @@ cp "$BUILD/src/cassette" "$APP/Cassette"
 cp -R "$STAGE/usr/share" "$APP/share"
 # the compiled schema file is what GSettings actually reads
 glib-compile-schemas "$APP/share/glib-2.0/schemas"
-[ -d "$STAGE/usr/etc" ] && cp -R "$STAGE/usr/etc" "$APP/etc"
+mkdir -p "$APP/etc"
+[ -d "$STAGE/etc" ] && cp -R "$STAGE/etc/." "$APP/etc/"
+[ -d "$STAGE/usr/etc" ] && cp -R "$STAGE/usr/etc/." "$APP/etc/"
 # only libgtk is shared; the app and the rest are static
 cp "$BUILD/subprojects/gtk/gtk/libgtk-4.1.dylib" "$APP/"
 install_name_tool -add_rpath @executable_path "$APP/Cassette" 2>/dev/null || true
