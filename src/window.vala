@@ -54,6 +54,10 @@ public class Cassette.Window : ApplicationWindow {
     unowned Gtk.Stack bar_stack;
     [GtkChild]
     unowned StationBar station_bar;
+    [GtkChild]
+    unowned ClipBin bar_clip;
+    [GtkChild]
+    unowned Adw.ViewSwitcherBar view_switcher;
 
     int reconnect_timer = Cassette.Client.TIMEOUT;
 
@@ -137,6 +141,46 @@ public class Cassette.Window : ApplicationWindow {
 #else
         gdk_ios_set_bars_colors (raised, player_bar_is_bottom ? raised : flat);
 #endif
+    }
+#endif
+
+#if IOS
+    int safe_top = -1;
+    int safe_bottom = -1;
+    int safe_left = -1;
+    int safe_right = -1;
+
+    /**
+     * The iOS toplevel fills the whole window. Pad the bars and the page
+     * by the safe area so their backgrounds and shadows reach the screen
+     * edges (under the status bar, home indicator and notch) while the
+     * content stays clear of them.
+     */
+    void update_safe_area_padding () {
+        int top, bottom, left, right;
+        gdk_ios_get_safe_area (out top, out bottom, out left, out right);
+
+        if (top == safe_top && bottom == safe_bottom && left == safe_left && right == safe_right) {
+            return;
+        }
+        safe_top = top;
+        safe_bottom = bottom;
+        safe_left = left;
+        safe_right = right;
+
+        header_bar.margin_top = top;
+        header_bar.margin_start = left;
+        header_bar.margin_end = right;
+
+        view_switcher.margin_bottom = bottom;
+        view_switcher.margin_start = left;
+        view_switcher.margin_end = right;
+
+        bar_clip.margin_start = left;
+        bar_clip.margin_end = right;
+
+        main_stack.margin_start = left;
+        main_stack.margin_end = right;
     }
 #endif
 
@@ -355,8 +399,15 @@ public class Cassette.Window : ApplicationWindow {
             });
         }
 
+#if IOS
+        update_safe_area_padding ();
+#endif
+
         resized.connect ((width, height) => {
             keep_focus_visible (height);
+#if IOS
+            update_safe_area_padding ();
+#endif
             bool compact = width < PLAYER_BAR_COMPACT_WIDTH;
             bool tiny = width < PLAYER_BAR_TINY_WIDTH;
             if (player_bar.compact != compact) {

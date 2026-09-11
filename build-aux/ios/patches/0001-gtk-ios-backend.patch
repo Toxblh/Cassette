@@ -1328,10 +1328,10 @@ index 0000000..45a4677
 +G_END_DECLS
 diff --git a/gdk/ios/gdkiosruntime.c b/gdk/ios/gdkiosruntime.c
 new file mode 100644
-index 0000000..4decaf0
+index 0000000..835625a
 --- /dev/null
 +++ b/gdk/ios/gdkiosruntime.c
-@@ -0,0 +1,432 @@
+@@ -0,0 +1,450 @@
 +/*
 + * GDK iOS backend: UIKit application shell and the GTK thread.
 + *
@@ -1378,18 +1378,17 @@ index 0000000..4decaf0
 +@implementation GdkIosRootView
 +
 +/*
-+ * Toplevel surfaces fill the safe area, minus whatever the on-screen
-+ * keyboard covers; the strips above and below show the bar colours the
-+ * application asked for (status bar and home indicator areas).
++ * Toplevel surfaces fill the whole window (edge to edge, under the
++ * status bar / home indicator / notch), shrinking only above the
++ * on-screen keyboard. The application pads its bars by the safe area,
++ * so their backgrounds and shadows reach the screen edges.
 + */
 +- (void)layoutSubviews
 +{
 +  [super layoutSubviews];
-+  CGRect safe = self.safeAreaLayoutGuide.layoutFrame;
-+  CGFloat bottom = CGRectGetMaxY (safe);
-+  if (self.keyboardTop > 0 && self.keyboardTop < bottom)
-+    bottom = self.keyboardTop;
-+  CGRect frame = CGRectMake (safe.origin.x, safe.origin.y, safe.size.width, MAX (bottom - safe.origin.y, 1));
++  CGRect frame = self.bounds;
++  if (self.keyboardTop > 0 && self.keyboardTop < CGRectGetMaxY (self.bounds))
++    frame.size.height = MAX (self.keyboardTop, 1);
 +  for (UIView *child in self.subviews)
 +    {
 +      if ([child isKindOfClass:[GdkIosSurfaceView class]] && ((GdkIosSurfaceView *) child).gdkIsToplevel)
@@ -1404,8 +1403,6 @@ index 0000000..4decaf0
 +      self.bottomStrip.userInteractionEnabled = NO;
 +      [self insertSubview:self.bottomStrip atIndex:0];
 +    }
-+  self.bottomStrip.frame = CGRectMake (0, CGRectGetMaxY (safe), self.bounds.size.width,
-+                                       self.bounds.size.height - CGRectGetMaxY (safe));
 +  self.bottomStrip.backgroundColor = gdk_ios_color_from_argb (gdk_ios_bars_bottom);
 +  self.backgroundColor = gdk_ios_color_from_argb (gdk_ios_bars_top);
 +}
@@ -1718,6 +1715,27 @@ index 0000000..4decaf0
 +  });
 +}
 +
++void
++gdk_ios_get_safe_area (int *top, int *bottom, int *left, int *right)
++{
++  __block UIEdgeInsets insets = UIEdgeInsetsZero;
++
++  gdk_ios_run_on_main_sync (^{
++    GdkIosRootView *root = gdk_ios_runtime_get_root_view ();
++    if (root != nil)
++      insets = root.safeAreaInsets;
++  });
++
++  if (top != NULL)
++    *top = (int) ceil (insets.top);
++  if (bottom != NULL)
++    *bottom = (int) ceil (insets.bottom);
++  if (left != NULL)
++    *left = (int) ceil (insets.left);
++  if (right != NULL)
++    *right = (int) ceil (insets.right);
++}
++
 +gboolean
 +gdk_ios_runtime_is_ready (void)
 +{
@@ -1766,10 +1784,10 @@ index 0000000..4decaf0
 +}
 diff --git a/gdk/ios/gdkiosruntime.h b/gdk/ios/gdkiosruntime.h
 new file mode 100644
-index 0000000..5d40d2c
+index 0000000..4ae9666
 --- /dev/null
 +++ b/gdk/ios/gdkiosruntime.h
-@@ -0,0 +1,32 @@
+@@ -0,0 +1,42 @@
 +#pragma once
 +
 +#include <gdk/gdk.h>
@@ -1800,6 +1818,16 @@ index 0000000..5d40d2c
 + */
 +GDK_AVAILABLE_IN_ALL
 +void gdk_ios_set_bars_colors (guint32 top_argb, guint32 bottom_argb);
++
++/**
++ * gdk_ios_get_safe_area:
++ *
++ * The window's safe-area insets in points (status bar, home indicator,
++ * notch). Toplevels fill the whole window, so the application pads its
++ * bars by these. Any thread.
++ */
++GDK_AVAILABLE_IN_ALL
++void gdk_ios_get_safe_area (int *top, int *bottom, int *left, int *right);
 +
 +G_END_DECLS
 diff --git a/gdk/ios/gdkiosseat-private.h b/gdk/ios/gdkiosseat-private.h
@@ -3815,6 +3843,64 @@ index 7dd02ce..d5ab027 100644
  };
  
  struct _GtkListViewClass
+diff --git a/gtk/gtktext.c b/gtk/gtktext.c
+index 631e881..1b0af56 100644
+--- a/gtk/gtktext.c
++++ b/gtk/gtktext.c
+@@ -2226,6 +2226,11 @@ begin_change (GtkText *self)
+ {
+   GtkTextPrivate *priv = gtk_text_get_instance_private (self);
+ 
++  /* Any edit (typing, backspace, an IME commit, paste) dismisses the
++   * touch selection bubble; on touch the key controller is not in the
++   * loop, so this is the only hook that sees all of them. */
++  gtk_text_selection_bubble_popup_unset (self);
++
+   priv->change_count++;
+ 
+   g_object_freeze_notify (G_OBJECT (self));
+@@ -6517,7 +6522,6 @@ gtk_text_selection_bubble_popup_show (gpointer user_data)
+   const int text_width = gtk_widget_get_width (GTK_WIDGET (self));
+   const int text_height = gtk_widget_get_height (GTK_WIDGET (self));
+   cairo_rectangle_int_t rect;
+-  graphene_point_t p;
+   gboolean has_selection;
+   int start_x, end_x;
+   GtkWidget *box;
+@@ -6562,15 +6566,13 @@ gtk_text_selection_bubble_popup_show (gpointer user_data)
+ 
+   g_object_unref (model);
+ 
+-  if (!gtk_widget_compute_point (GTK_WIDGET (self), gtk_widget_get_parent (GTK_WIDGET (self)),
+-                                 &GRAPHENE_POINT_INIT (0, 0), &p))
+-    graphene_point_init (&p, 0, 0);
+-
+   gtk_text_get_cursor_locations (self, &start_x, NULL);
+ 
+   start_x -= priv->scroll_offset;
+   start_x = CLAMP (start_x, 0, text_width);
+-  rect.y = - p.y;
++  /* The popover is parented to the text widget, so the pointing rect is
++   * in its coordinates too. */
++  rect.y = 0;
+   rect.height = text_height;
+ 
+   if (has_selection)
+@@ -6578,12 +6580,12 @@ gtk_text_selection_bubble_popup_show (gpointer user_data)
+       end_x = gtk_text_get_selection_bound_location (self) - priv->scroll_offset;
+       end_x = CLAMP (end_x, 0, text_width);
+ 
+-      rect.x = - p.x + MIN (start_x, end_x);
++      rect.x = MIN (start_x, end_x);
+       rect.width = ABS (end_x - start_x);
+     }
+   else
+     {
+-      rect.x = - p.x + start_x;
++      rect.x = start_x;
+       rect.width = 0;
+     }
+ 
 diff --git a/gtk/meson.build b/gtk/meson.build
 index df3a08c..9a8d88d 100644
 --- a/gtk/meson.build

@@ -83,7 +83,7 @@ template $CassetteWindow: $CassetteApplicationWindow {
       };
 
       [bottom]
-      $CassetteClipBin {
+      $CassetteClipBin bar_clip {
         // The bars switch to their compact layout from the window width;
         // the wide layout must not keep the window from getting there.
         min-width: 200;
@@ -110,7 +110,7 @@ template $CassetteWindow: $CassetteApplicationWindow {
     };
 
     [bottom]
-    Adw.ViewSwitcherBar {
+    Adw.ViewSwitcherBar view_switcher {
       stack: main_stack;
       reveal: true;
     }
