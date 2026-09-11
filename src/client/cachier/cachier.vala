@@ -233,6 +233,15 @@ namespace Cassette.Client.Cachier {
             return null;
         }
 
+        string? cache_key = null;
+        if (cover_uris.size > 1) {
+            cache_key = "%d:%s".printf (size, string.joinv ("|", cover_uris.to_array ()));
+            var cached = Storager.lookup_composition (cache_key);
+            if (cached != null) {
+                return cached;
+            }
+        }
+
         var pixbufs = new Gdk.Pixbuf?[cover_uris.size];
 
         threader.add_image (() => {
@@ -345,6 +354,9 @@ namespace Cassette.Client.Cachier {
                 255
             );
 
+            if (cache_key != null) {
+                Storager.store_composition (cache_key, pixbuf);
+            }
             return pixbuf;
         }
 
@@ -375,6 +387,10 @@ namespace Cassette.Client.Cachier {
                 0.5,
                 Gdk.InterpType.BILINEAR,
                 255);
+        }
+
+        if (cache_key != null) {
+            Storager.store_composition (cache_key, pixbuf);
         }
         return pixbuf;
     }

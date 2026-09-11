@@ -111,10 +111,73 @@ namespace Cassette.Client.Cachier {
         }
     }
 
+    /**
+     * Small LRU of prepared images, so recycling a row does not re-read
+     * and re-decode the same cover. Not thread-safe: callers lock it.
+     */
+    public class PixbufCache : Object {
+
+        Gee.HashMap<string, Gdk.Pixbuf> images = new Gee.HashMap<string, Gdk.Pixbuf> ();
+        Gee.LinkedList<string> order = new Gee.LinkedList<string> ();
+        int limit;
+
+        public PixbufCache (int limit) {
+            this.limit = limit;
+        }
+
+        public Gdk.Pixbuf? lookup (string key) {
+            var pixbuf = images.get (key);
+            if (pixbuf != null) {
+                order.remove (key);
+                order.offer_head (key);
+            }
+            return pixbuf;
+        }
+
+        public void store (string key, owned Gdk.Pixbuf pixbuf) {
+            images.set (key, pixbuf);
+            order.remove (key);
+            order.offer_head (key);
+
+            while (images.size > limit) {
+                var oldest = order.poll_tail ();
+                if (oldest == null) {
+                    break;
+                }
+                images.remove (oldest);
+            }
+        }
+    }
+
+
     public class Storager : Object {
         /**
            A class for working with client files
         */
+
+        // Prepared covers. Rows are 75 px (~22 KB each), so 512 entries
+        // stay in the low tens of MB.
+        const int IMAGE_CACHE_LIMIT = 512;
+        static PixbufCache image_cache = new PixbufCache (IMAGE_CACHE_LIMIT);
+        static int image_cache_lock = 0;
+
+        // Composed multi-cover art (album/playlist mosaics), keyed by the
+        // cover set and size. Single covers are cached above.
+        const int COMPOSITION_CACHE_LIMIT = 256;
+        static PixbufCache composition_cache = new PixbufCache (COMPOSITION_CACHE_LIMIT);
+        static int composition_cache_lock = 0;
+
+        public static Gdk.Pixbuf? lookup_composition (string key) {
+            lock (composition_cache_lock) {
+                return composition_cache.lookup (key);
+            }
+        }
+
+        public static void store_composition (string key, Gdk.Pixbuf pixbuf) {
+            lock (composition_cache_lock) {
+                composition_cache.store (key, pixbuf);
+            }
+        }
 
         InfoDB? _db = null;
         public InfoDB db {
@@ -573,6 +636,13 @@ namespace Cassette.Client.Cachier {
         static int pixbuf_lock = 0;
 
         public Gdk.Pixbuf? load_image (string image_uri) {
+            lock (image_cache_lock) {
+                var cached = image_cache.lookup (image_uri);
+                if (cached != null) {
+                    return cached;
+                }
+            }
+
             Location image_location = image_cache_location (image_uri);
             if (image_location.file == null) {
                 return null;
@@ -594,6 +664,12 @@ namespace Cassette.Client.Cachier {
                         pixbuf = new Gdk.Pixbuf.from_stream (stream);
                     }
                     stream.close ();
+
+                    if (pixbuf != null) {
+                        lock (image_cache_lock) {
+                            image_cache.store (image_uri, pixbuf);
+                        }
+                    }
                     return pixbuf;
 
                 } catch (Error e) {
