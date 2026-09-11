@@ -66,6 +66,20 @@ public sealed class Cassette.CoverImage : Gtk.Frame {
     public void clear () {
         yam_object = null;
         remove_css_class ("card");
+        reset_image ();
+    }
+
+    /** Drop whatever cover is shown and go back to the placeholder icon. */
+    void reset_image () {
+        for (var child = stack.get_first_child (); child != null; )
+            {
+                var next = child.get_next_sibling ();
+                if (child != placeholder_image)
+                    stack.remove (child);
+                child = next;
+            }
+
+        stack.visible_child = placeholder_image;
     }
 
     /**
@@ -110,6 +124,11 @@ public sealed class Cassette.CoverImage : Gtk.Frame {
 
     public async void load_image () {
         assert (yam_object != null);
+
+        /* The widget is reused (the player bar, recycled list rows): never
+         * keep the previous track's cover while this one loads, and leave
+         * the placeholder if it has no cover at all. */
+        reset_image ();
 
         Gdk.Pixbuf? pixbuf_buffer = null;
 
