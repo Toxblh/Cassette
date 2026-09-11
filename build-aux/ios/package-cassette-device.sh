@@ -9,6 +9,8 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$HERE/../.."
 BUILD=${1:-$ROOT/build-ios-device}
 UDID=${2:-00008140-000E048111E0801C}
+# meson resolves DESTDIR against the build directory, so it has to be absolute
+BUILD="$(cd "$BUILD" && pwd)"
 APP="$BUILD/Cassette.app"
 STAGE="$BUILD/stage"
 BUNDLE_ID=space.rirusha.cassette
