@@ -1,0 +1,14 @@
+build/
+.env
+.env.*
+!.env.example
+*.p8
+AuthKey_*.json
+*.mobileprovision
+*.ipa
+*.cer
+*.p12
+*.certSigningRequest
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/README.md
