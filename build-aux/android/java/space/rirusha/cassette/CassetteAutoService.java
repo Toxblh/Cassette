@@ -71,6 +71,7 @@ public class CassetteAutoService extends MediaBrowserService {
 		}
 
 		final List<MediaBrowser.MediaItem> items = new ArrayList<>();
+		final List<String> covers = new ArrayList<>();
 		try {
 			JSONArray array = new JSONArray(json);
 			for (int i = 0; i < array.length(); i++) {
@@ -81,9 +82,13 @@ public class CassetteAutoService extends MediaBrowserService {
 						.setSubtitle(o.optString("subtitle"));
 				String icon = o.optString("icon", "");
 				if (!icon.isEmpty()) {
-					String path = icon.startsWith("builtin:")
-							? "builtin/" + icon.substring("builtin:".length())
-							: "url/" + Uri.encode(icon);
+					String path;
+					if (icon.startsWith("builtin:")) {
+						path = "builtin/" + icon.substring("builtin:".length());
+					} else {
+						path = "url/" + Uri.encode(icon);
+						covers.add(icon);
+					}
 					d.setIconUri(Uri.parse("content://" + CassetteImageProvider.AUTHORITY + "/" + path));
 				}
 				int flags = o.optBoolean("playable", false)
@@ -96,6 +101,17 @@ public class CassetteAutoService extends MediaBrowserService {
 		}
 
 		main.post(() -> result.sendResult(items));
+
+		// Warm the cover cache in the background so scrolling the list does
+		// not wait for a download per row.
+		if (!covers.isEmpty()) {
+			final android.content.Context context = NativeContext.get();
+			new Thread(() -> {
+				for (String url : covers) {
+					CassetteImageProvider.prefetch(context, url);
+				}
+			}, "cassette-covers").start();
+		}
 	}
 
 	/** Called from SessionBridge's MediaSession callback (main thread). */

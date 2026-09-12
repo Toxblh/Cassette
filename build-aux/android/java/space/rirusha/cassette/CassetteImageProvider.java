@@ -58,6 +58,22 @@ public class CassetteImageProvider extends ContentProvider {
 		return ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY);
 	}
 
+	/** Warm the cover cache so the car's later requests are instant. */
+	public static void prefetch(android.content.Context context, String url) {
+		if (!allowed(url)) {
+			return;
+		}
+		File file = new File(context.getCacheDir(), cacheName(url));
+		if (file.exists() && file.length() > 0) {
+			return;
+		}
+		try {
+			download(url, file);
+		} catch (Exception ignored) {
+			// on-demand loading will retry
+		}
+	}
+
 	@Override
 	public String getType(Uri uri) {
 		List<String> segments = uri.getPathSegments();
@@ -116,7 +132,7 @@ public class CassetteImageProvider extends ContentProvider {
 		}
 	}
 
-	private void download(String url, File file) throws FileNotFoundException {
+	private static void download(String url, File file) throws FileNotFoundException {
 		try {
 			HttpURLConnection connection = (HttpURLConnection) new URL(url).openConnection();
 			connection.setConnectTimeout(5000);

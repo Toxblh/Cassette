@@ -36,7 +36,43 @@ class QueueResult {
     public string? desc;
 }
 
+// Fetched browse trees, so re-opening a collection does not hit the network
+// again (the car caches too, but re-browses between sessions).
+const int64 CACHE_TTL_USEC = 5 * 60 * 1000000;
+
+class BrowseCache {
+    HashTable<string, string> json = new HashTable<string, string> (str_hash, str_equal);
+    HashTable<string, int64?> time = new HashTable<string, int64?> (str_hash, str_equal);
+
+    public string? get (string parent) {
+        var when = time.lookup (parent);
+        if (when == null || GLib.get_monotonic_time () - when > CACHE_TTL_USEC) {
+            return null;
+        }
+        return json.lookup (parent);
+    }
+
+    public void put (string parent, string value) {
+        json.insert (parent, value);
+        time.insert (parent, GLib.get_monotonic_time ());
+    }
+}
+
+static BrowseCache? browse_cache;
+
+static string? cached (string parent) {
+    return browse_cache == null ? null : browse_cache.get (parent);
+}
+
+static void store (string parent, string value) {
+    // Never cache an empty/failed result: the next request should retry.
+    if (browse_cache != null && value.length > 4) {
+        browse_cache.put (parent, value);
+    }
+}
+
 public static void init () {
+    browse_cache = new BrowseCache ();
     cassette_android_auto_init (on_browse, on_play_media_id, on_play_from_search);
 }
 
@@ -47,6 +83,12 @@ static void on_browse (string parent_id, int64 request_id) {
 }
 
 static async void browse (string parent, int64 request_id) {
+    string? hit = cached (parent);
+    if (hit != null) {
+        cassette_android_auto_browse_result (request_id, hit);
+        return;
+    }
+
     string json = "[ ]";
     threader.add (() => {
         try {
@@ -57,6 +99,7 @@ static async void browse (string parent, int64 request_id) {
         Idle.add (browse.callback);
     });
     yield;
+    store (parent, json);
     cassette_android_auto_browse_result (request_id, json);
 }
 
