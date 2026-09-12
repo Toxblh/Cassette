@@ -18,6 +18,8 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.security.MessageDigest;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /**
  * Serves cover art and built-in icons to Android Auto. The car does not
@@ -36,6 +38,10 @@ import java.util.List;
  */
 public class CassetteImageProvider extends ContentProvider {
 	public static final String AUTHORITY = "space.rirusha.cassette.images";
+
+	// A fast fling can ask for a hundred covers at once; a bounded pool keeps
+	// the downloads from spawning a thread each and starving the device.
+	private static final ExecutorService POOL = Executors.newFixedThreadPool(5);
 
 	@Override
 	public boolean onCreate() {
@@ -78,7 +84,7 @@ public class CassetteImageProvider extends ContentProvider {
 			ParcelFileDescriptor read = pipe[0];
 			ParcelFileDescriptor write = pipe[1];
 
-			new Thread(() -> {
+			POOL.execute(() -> {
 				File temp = new File(file.getParentFile(), file.getName() + ".part");
 				boolean complete = false;
 				try (ParcelFileDescriptor.AutoCloseOutputStream out =
@@ -109,7 +115,7 @@ public class CassetteImageProvider extends ContentProvider {
 						temp.delete();
 					}
 				}
-			}, "cassette-cover").start();
+			});
 
 			return read;
 		} catch (IOException e) {
