@@ -155,7 +155,7 @@ public final class SessionBridge {
 			if (artUrl != null) {
 				// The car renders cover art only from a content URI, not http.
 				metadata.putString(MediaMetadata.METADATA_KEY_ALBUM_ART_URI,
-						"content://" + CassetteImageProvider.AUTHORITY + "/" + android.net.Uri.encode(artUrl));
+						"content://" + CassetteImageProvider.AUTHORITY + "/url/" + android.net.Uri.encode(artUrl));
 			}
 
 			session.setMetadata(metadata.build());

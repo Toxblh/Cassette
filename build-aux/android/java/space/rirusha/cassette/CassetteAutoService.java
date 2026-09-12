@@ -81,8 +81,10 @@ public class CassetteAutoService extends MediaBrowserService {
 						.setSubtitle(o.optString("subtitle"));
 				String icon = o.optString("icon", "");
 				if (!icon.isEmpty()) {
-					d.setIconUri(Uri.parse("content://" + CassetteImageProvider.AUTHORITY + "/"
-							+ Uri.encode(icon)));
+					String path = icon.startsWith("builtin:")
+							? "builtin/" + icon.substring("builtin:".length())
+							: "url/" + Uri.encode(icon);
+					d.setIconUri(Uri.parse("content://" + CassetteImageProvider.AUTHORITY + "/" + path));
 				}
 				int flags = o.optBoolean("playable", false)
 						? MediaBrowser.MediaItem.FLAG_PLAYABLE

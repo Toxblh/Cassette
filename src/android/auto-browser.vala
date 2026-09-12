@@ -114,9 +114,9 @@ static async void search (string text) {
 static string build (string parent) throws Error {
     if (parent == "root") {
         var items = new Gee.ArrayList<string> ();
-        items.add (item_json ("liked", "Liked", ""));
-        items.add (item_json ("playlists", "Playlists", ""));
-        items.add (item_json ("stations", "Stations", ""));
+        items.add (item_json ("liked", "Liked", "", false, "builtin:cassette_root_liked"));
+        items.add (item_json ("playlists", "Playlists", "", false, "builtin:cassette_root_playlists"));
+        items.add (item_json ("stations", "Stations", "", false, "builtin:cassette_root_stations"));
         return array_json (items);
     }
 
