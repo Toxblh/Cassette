@@ -12,6 +12,7 @@ import android.os.ParcelFileDescriptor;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.FileNotFoundException;
+import java.io.IOException;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
@@ -21,12 +22,17 @@ import java.util.List;
 /**
  * Serves cover art and built-in icons to Android Auto. The car does not
  * render an http icon URI on a MediaItem, so the browse tree points at
- * content:// URIs here and the car fetches them itself.
+ * content:// URIs here.
  *
  *   content://space.rirusha.cassette.images/url/<encoded https url>
  *   content://space.rirusha.cassette.images/builtin/<drawable name>
  *
- * Only Yandex image hosts are allowed for remote URLs.
+ * An uncached cover is streamed through a pipe and downloaded on a worker
+ * thread, so openFile() returns at once and a fast scroll never waits on the
+ * network (the same idea as the iOS cover loader). The bytes are cached on
+ * the way through, so the next request is a plain file.
+ *
+ * Only Yandex image hosts are allowed.
  */
 public class CassetteImageProvider extends ContentProvider {
 	public static final String AUTHORITY = "space.rirusha.cassette.images";
@@ -42,42 +48,73 @@ public class CassetteImageProvider extends ContentProvider {
 		if (segments.size() < 2) {
 			throw new FileNotFoundException("bad path");
 		}
-		File file;
-		if ("builtin".equals(segments.get(0))) {
-			file = builtinFile(segments.get(1));
-		} else {
-			String url = segments.get(1);
-			if (!allowed(url)) {
-				throw new FileNotFoundException("host not allowed");
-			}
-			file = new File(getContext().getCacheDir(), cacheName(url));
-			if (!file.exists() || file.length() == 0) {
-				download(url, file);
-			}
-		}
-		return ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY);
-	}
 
-	/** Warm the cover cache so the car's later requests are instant. */
-	public static void prefetch(android.content.Context context, String url) {
+		if ("builtin".equals(segments.get(0))) {
+			return ParcelFileDescriptor.open(builtinFile(segments.get(1)),
+					ParcelFileDescriptor.MODE_READ_ONLY);
+		}
+
+		String url = segments.get(1);
 		if (!allowed(url)) {
-			return;
+			throw new FileNotFoundException("host not allowed");
 		}
-		File file = new File(context.getCacheDir(), cacheName(url));
+		File file = new File(getContext().getCacheDir(), cacheName(url));
 		if (file.exists() && file.length() > 0) {
-			return;
+			return ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY);
 		}
-		try {
-			download(url, file);
-		} catch (Exception ignored) {
-			// on-demand loading will retry
-		}
+		return stream(url, file);
 	}
 
 	@Override
 	public String getType(Uri uri) {
 		List<String> segments = uri.getPathSegments();
 		return segments.size() > 0 && "builtin".equals(segments.get(0)) ? "image/png" : "image/jpeg";
+	}
+
+	/** Download to the reader as it arrives, caching the bytes on the way. */
+	private ParcelFileDescriptor stream(String url, File file) throws FileNotFoundException {
+		try {
+			ParcelFileDescriptor[] pipe = ParcelFileDescriptor.createPipe();
+			ParcelFileDescriptor read = pipe[0];
+			ParcelFileDescriptor write = pipe[1];
+
+			new Thread(() -> {
+				File temp = new File(file.getParentFile(), file.getName() + ".part");
+				boolean complete = false;
+				try (ParcelFileDescriptor.AutoCloseOutputStream out =
+						     new ParcelFileDescriptor.AutoCloseOutputStream(write);
+				     FileOutputStream cache = new FileOutputStream(temp)) {
+					HttpURLConnection connection = (HttpURLConnection) new URL(url).openConnection();
+					connection.setConnectTimeout(8000);
+					connection.setReadTimeout(15000);
+					int code = connection.getResponseCode();
+					if (code == 200) {
+						try (InputStream in = connection.getInputStream()) {
+							byte[] buffer = new byte[8192];
+							int n;
+							while ((n = in.read(buffer)) > 0) {
+								out.write(buffer, 0, n);
+								cache.write(buffer, 0, n);
+							}
+						}
+						complete = true;
+					}
+					connection.disconnect();
+				} catch (Exception ignored) {
+					// the reader just sees a short/empty stream
+				} finally {
+					if (complete) {
+						temp.renameTo(file);
+					} else {
+						temp.delete();
+					}
+				}
+			}, "cassette-cover").start();
+
+			return read;
+		} catch (IOException e) {
+			throw new FileNotFoundException("pipe failed: " + e);
+		}
 	}
 
 	/** Rasterise one of the app's vector drawables (built-in tab icons). */
@@ -129,34 +166,6 @@ public class CassetteImageProvider extends ContentProvider {
 			return builder.toString() + ".img";
 		} catch (Exception e) {
 			return Integer.toHexString(url.hashCode()) + ".img";
-		}
-	}
-
-	private static void download(String url, File file) throws FileNotFoundException {
-		try {
-			HttpURLConnection connection = (HttpURLConnection) new URL(url).openConnection();
-			connection.setConnectTimeout(5000);
-			connection.setReadTimeout(5000);
-			int code = connection.getResponseCode();
-			if (code != 200) {
-				connection.disconnect();
-				throw new Exception("http " + code);
-			}
-			File temp = new File(file.getParentFile(), file.getName() + ".part");
-			try (InputStream in = connection.getInputStream();
-			     FileOutputStream out = new FileOutputStream(temp)) {
-				byte[] buffer = new byte[8192];
-				int n;
-				while ((n = in.read(buffer)) > 0) {
-					out.write(buffer, 0, n);
-				}
-			}
-			connection.disconnect();
-			if (!temp.renameTo(file)) {
-				throw new Exception("rename failed");
-			}
-		} catch (Exception e) {
-			throw new FileNotFoundException("cover failed: " + e);
 		}
 	}
 
