@@ -157,9 +157,9 @@ static async void search (string text) {
 static string build (string parent) throws Error {
     if (parent == "root") {
         var items = new Gee.ArrayList<string> ();
-        items.add (item_json ("liked", "Liked", "", false, "builtin:cassette_root_liked"));
-        items.add (item_json ("playlists", "Playlists", "", false, "builtin:cassette_root_playlists"));
-        items.add (item_json ("stations", "Stations", "", false, "builtin:cassette_root_stations"));
+        items.add (item_json ("liked", "Liked", "", false, "builtin:emblem-favorite-symbolic"));
+        items.add (item_json ("playlists", "Playlists", "", false, "builtin:view-list-symbolic"));
+        items.add (item_json ("stations", "Stations", "", false, "builtin:wave-my-wave-symbolic"));
         return array_json (items);
     }
 
@@ -218,7 +218,9 @@ static string build (string parent) throws Error {
                     if (id == "") {
                         continue;
                     }
-                    items.add (item_json ("station|" + id, info.name, "Yandex", true));
+                    string icon_name = info.icon != null
+                        ? info.icon.get_internal_icon_name (id) : "music-note-symbolic";
+                    items.add (item_json ("station|" + id, info.name, "", true, "builtin:" + icon_name));
                 }
             }
         } catch (Error e) {
@@ -339,5 +341,11 @@ static string escape (string text) {
     }
     return builder.str;
 }
+
+// The car cannot render our bundled symbolic SVGs, and the browser service
+// can run without a window (no Gdk.Display). Both station icons and the root
+// tabs are therefore referenced as `builtin:<app icon>`; the app's SVG icons
+// are converted to Android vector drawables at build time and the provider
+// rasterises them through the framework.
 
 }

@@ -123,21 +123,28 @@ public class CassetteImageProvider extends ContentProvider {
 		}
 	}
 
-	/** Rasterise one of the app's vector drawables (built-in tab icons). */
+	/** Rasterise one of the app's vector drawables (app symbolic icons). */
 	private File builtinFile(String name) throws FileNotFoundException {
-		File file = new File(getContext().getCacheDir(), "builtin-" + name + ".png");
+		// Icon names are GTK-style ("wave-genre-pop-symbolic"); Android
+		// resource names use underscores.
+		String resource = name.replace('-', '_');
+		File file = new File(getContext().getCacheDir(), "builtin-" + resource + ".png");
 		if (file.exists() && file.length() > 0) {
 			return file;
 		}
-		int id = getContext().getResources().getIdentifier(name, "drawable", getContext().getPackageName());
+		int id = getContext().getResources().getIdentifier(resource, "drawable", getContext().getPackageName());
 		Drawable drawable = id == 0 ? null : getContext().getDrawable(id);
 		if (drawable == null) {
 			throw new FileNotFoundException("no drawable " + name);
 		}
 		int size = 128;
+		// The car draws a browse item's icon edge to edge and clips it to a
+		// rounded tile, so leave the symbolic icons some breathing room
+		// instead of letting their tips touch the corners.
+		int inset = size / 8;
 		Bitmap bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);
 		Canvas canvas = new Canvas(bitmap);
-		drawable.setBounds(0, 0, size, size);
+		drawable.setBounds(inset, inset, size - inset, size - inset);
 		drawable.draw(canvas);
 		try (FileOutputStream out = new FileOutputStream(file)) {
 			bitmap.compress(Bitmap.CompressFormat.PNG, 100, out);
