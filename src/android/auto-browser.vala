@@ -205,11 +205,16 @@ static string build (string parent) throws Error {
 
     if (parent == "stations") {
         var items = new Gee.ArrayList<string> ();
-        var stations = yam_talker.client.rotor_stations_list ();
-        if (stations != null) {
-            foreach (var station in stations) {
-                items.add (item_json ("station|" + station.station_id, station.title, "Yandex", true));
+        try {
+            yam_talker.init_if_not ();
+            var stations = yam_talker.client.rotor_stations_list ();
+            if (stations != null) {
+                foreach (var station in stations) {
+                    items.add (item_json ("station|" + station.station_id, station.title, "Yandex", true));
+                }
             }
+        } catch (Error e) {
+            warning ("auto stations: %s", e.message);
         }
         return array_json (items);
     }
