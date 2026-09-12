@@ -21,7 +21,11 @@ import java.util.concurrent.atomic.AtomicLong;
 /**
  * Android Auto / Android Automotive media source. The browse tree and the
  * play commands come from native (android-auto.c -> auto-browser.vala): Java
- * only turns the JSON into MediaItems and hands the session token to the car.
+ * turns the JSON into MediaItems, hands the session token to the car, and
+ * forwards play commands.
+ *
+ * Cover art is an icon URI to CassetteImageProvider (the car will not render
+ * an http icon URI, and ignores a bitmap).
  *
  * The MediaSession itself is the one SessionBridge already keeps for the lock
  * screen and notification; this service just publishes it to Android Auto.
@@ -61,33 +65,35 @@ public class CassetteAutoService extends MediaBrowserService {
 
 	/** Called from native with a JSON array of items; may run off the UI thread. */
 	static void deliverBrowse(final long requestId, final String json) {
-		main.post(() -> {
-			Result<List<MediaBrowser.MediaItem>> result = pending.remove(requestId);
-			if (result == null) return;
+		final Result<List<MediaBrowser.MediaItem>> result = pending.remove(requestId);
+		if (result == null) {
+			return;
+		}
 
-			List<MediaBrowser.MediaItem> items = new ArrayList<>();
-			try {
-				JSONArray array = new JSONArray(json);
-				for (int i = 0; i < array.length(); i++) {
-					JSONObject o = array.getJSONObject(i);
-					MediaDescription.Builder d = new MediaDescription.Builder()
-							.setMediaId(o.getString("id"))
-							.setTitle(o.optString("title"))
-							.setSubtitle(o.optString("subtitle"));
-					String icon = o.optString("icon", "");
-					if (!icon.isEmpty()) {
-						d.setIconUri(Uri.parse(icon));
-					}
-					int flags = o.optBoolean("playable", false)
-							? MediaBrowser.MediaItem.FLAG_PLAYABLE
-							: MediaBrowser.MediaItem.FLAG_BROWSABLE;
-					items.add(new MediaBrowser.MediaItem(d.build(), flags));
+		final List<MediaBrowser.MediaItem> items = new ArrayList<>();
+		try {
+			JSONArray array = new JSONArray(json);
+			for (int i = 0; i < array.length(); i++) {
+				JSONObject o = array.getJSONObject(i);
+				MediaDescription.Builder d = new MediaDescription.Builder()
+						.setMediaId(o.getString("id"))
+						.setTitle(o.optString("title"))
+						.setSubtitle(o.optString("subtitle"));
+				String icon = o.optString("icon", "");
+				if (!icon.isEmpty()) {
+					d.setIconUri(Uri.parse("content://" + CassetteImageProvider.AUTHORITY + "/"
+							+ Uri.encode(icon)));
 				}
-			} catch (Exception e) {
-				Log.w(TAG, "browse json failed", e);
+				int flags = o.optBoolean("playable", false)
+						? MediaBrowser.MediaItem.FLAG_PLAYABLE
+						: MediaBrowser.MediaItem.FLAG_BROWSABLE;
+				items.add(new MediaBrowser.MediaItem(d.build(), flags));
 			}
-			result.sendResult(items);
-		});
+		} catch (Exception e) {
+			Log.w(TAG, "browse json failed", e);
+		}
+
+		main.post(() -> result.sendResult(items));
 	}
 
 	/** Called from SessionBridge's MediaSession callback (main thread). */

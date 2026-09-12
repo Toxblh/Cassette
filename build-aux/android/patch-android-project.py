@@ -75,6 +75,14 @@ def patch_manifest(path: Path):
         car.set(a("name"), "com.google.android.gms.car.application")
         car.set(a("resource"), "@xml/automotive_app_desc")
 
+    # Cover art for Android Auto items (the car does not render an http icon).
+    if app.find("provider[@%s='space.rirusha.cassette.CassetteImageProvider']" % a("name")) is None:
+        prov = ET.SubElement(app, "provider")
+        prov.set(a("name"), "space.rirusha.cassette.CassetteImageProvider")
+        prov.set(a("authorities"), "space.rirusha.cassette.images")
+        prov.set(a("exported"), "true")
+        prov.set(a("grantUriPermissions"), "true")
+
     if app.find("activity[@%s='space.rirusha.cassette.AuthActivity']" % a("name")) is None:
         act = ET.SubElement(app, "activity")
         act.set(a("name"), "space.rirusha.cassette.AuthActivity")
@@ -87,7 +95,7 @@ def patch_manifest(path: Path):
     tree.write(path, encoding="utf-8", xml_declaration=True)
 
     text = path.read_text()
-    for needle in ["CassetteApplication", "PlaybackService", "CassetteAutoService", "AuthActivity", "FOREGROUND_SERVICE_MEDIA_PLAYBACK"]:
+    for needle in ["CassetteApplication", "PlaybackService", "CassetteAutoService", "CassetteImageProvider", "AuthActivity", "FOREGROUND_SERVICE_MEDIA_PLAYBACK"]:
         if needle not in text:
             sys.exit("manifest patch failed: %s missing" % needle)
     print("manifest: ok (%s)" % path)
