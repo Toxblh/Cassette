@@ -210,7 +210,15 @@ static string build (string parent) throws Error {
             var stations = yam_talker.client.rotor_stations_list ();
             if (stations != null) {
                 foreach (var station in stations) {
-                    items.add (item_json ("station|" + station.station_id, station.title, "Yandex", true));
+                    var info = station.station;
+                    if (info == null || info.id == null) {
+                        continue;
+                    }
+                    string id = info.id.normal ?? "";
+                    if (id == "") {
+                        continue;
+                    }
+                    items.add (item_json ("station|" + id, info.name, "Yandex", true));
                 }
             }
         } catch (Error e) {
@@ -298,7 +306,7 @@ static string array_json (Gee.ArrayList<string> items) {
     return builder.str;
 }
 
-static string item_json (string id, string title, string subtitle, bool playable = false, string? icon = null) {
+static string item_json (string id, string? title, string? subtitle, bool playable = false, string? icon = null) {
     var builder = new StringBuilder ("{");
     builder.append_printf ("\"id\":\"%s\",\"title\":\"%s\",\"subtitle\":\"%s\",\"playable\":%s",
         escape (id), escape (title ?? ""), escape (subtitle ?? ""), playable ? "true" : "false");
