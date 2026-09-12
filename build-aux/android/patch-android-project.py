@@ -55,6 +55,26 @@ def patch_manifest(path: Path):
         svc.set(a("foregroundServiceType"), "mediaPlayback")
         svc.set(a("exported"), "false")
 
+    # Android Auto / Android Automotive media source: the car binds this
+    # MediaBrowserService. The androidx.car.app.launchable meta-data is the
+    # opt-in the car's MediaUtils checks (the built-in players carry it too).
+    if app.find("service[@%s='space.rirusha.cassette.CassetteAutoService']" % a("name")) is None:
+        auto = ET.SubElement(app, "service")
+        auto.set(a("name"), "space.rirusha.cassette.CassetteAutoService")
+        auto.set(a("exported"), "true")
+        auto.set(a("foregroundServiceType"), "mediaPlayback")
+        auto_filter = ET.SubElement(auto, "intent-filter")
+        auto_action = ET.SubElement(auto_filter, "action")
+        auto_action.set(a("name"), "android.media.browse.MediaBrowserService")
+        auto_optin = ET.SubElement(auto, "meta-data")
+        auto_optin.set(a("name"), "androidx.car.app.launchable")
+        auto_optin.set(a("value"), "true")
+
+    if app.find("meta-data[@%s='com.google.android.gms.car.application']" % a("name")) is None:
+        car = ET.SubElement(app, "meta-data")
+        car.set(a("name"), "com.google.android.gms.car.application")
+        car.set(a("resource"), "@xml/automotive_app_desc")
+
     if app.find("activity[@%s='space.rirusha.cassette.AuthActivity']" % a("name")) is None:
         act = ET.SubElement(app, "activity")
         act.set(a("name"), "space.rirusha.cassette.AuthActivity")
@@ -67,7 +87,7 @@ def patch_manifest(path: Path):
     tree.write(path, encoding="utf-8", xml_declaration=True)
 
     text = path.read_text()
-    for needle in ["CassetteApplication", "PlaybackService", "AuthActivity", "FOREGROUND_SERVICE_MEDIA_PLAYBACK"]:
+    for needle in ["CassetteApplication", "PlaybackService", "CassetteAutoService", "AuthActivity", "FOREGROUND_SERVICE_MEDIA_PLAYBACK"]:
         if needle not in text:
             sys.exit("manifest patch failed: %s missing" % needle)
     print("manifest: ok (%s)" % path)
@@ -132,6 +152,18 @@ def copy_java(src: Path, dst: Path):
     print("java: %d files under %s" % (n, dst))
 
 
+# Android Auto / Automotive opt-in: the app declares itself as a media source.
+def write_automotive_xml(res: Path):
+    d = res / "xml"
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "automotive_app_desc.xml").write_text(
+        '<?xml version="1.0" encoding="utf-8"?>\n'
+        '<automotiveApp>\n'
+        '    <uses name="media" />\n'
+        '</automotiveApp>\n')
+    print("automotive xml: ok")
+
+
 def main():
     if len(sys.argv) != 3:
         sys.exit(__doc__)
@@ -141,6 +173,7 @@ def main():
     copy_java(aux / "java", project / "app/src/main/java")
     write_bars_colors(project / "app/src/main/res")
     write_drawables(project / "app/src/main/res")
+    write_automotive_xml(project / "app/src/main/res")
 
 
 if __name__ == "__main__":

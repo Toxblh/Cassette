@@ -100,24 +100,33 @@ public final class SessionBridge {
 	// ── contract ──────────────────────────────────────────────────────────
 
 	public static void init() {
-		main.post(() -> {
-			if (session != null) return;
-			Context ctx = NativeContext.get();
-			session = new MediaSession(ctx, "Cassette");
-			session.setCallback(new MediaSession.Callback() {
-				@Override public void onPlay() { nativeCommand(CMD_PLAY); }
-				@Override public void onPause() { nativeCommand(CMD_PAUSE); }
-				@Override public void onSkipToNext() { nativeCommand(CMD_NEXT); }
-				@Override public void onSkipToPrevious() { nativeCommand(CMD_PREV); }
-				@Override public void onStop() { nativeCommand(CMD_STOP); }
-				@Override public void onSeekTo(long pos) { nativeSeek(pos / 1000.0); }
-				@Override public void onCustomAction(String action, android.os.Bundle extras) {
-					if (ACTION_LIKE.equals(action)) nativeCommand(CMD_LIKE);
-					else if (ACTION_SHUFFLE.equals(action)) nativeCommand(CMD_SHUFFLE);
-				}
-			}, main);
-			session.setPlaybackState(state(PlaybackState.STATE_NONE, 0));
-		});
+		main.post(SessionBridge::ensureSession);
+	}
+
+	/** Create the shared session if missing. Runs on the main looper. */
+	public static void ensureSession() {
+		if (session != null) return;
+		Context ctx = NativeContext.get();
+		session = new MediaSession(ctx, "Cassette");
+		session.setCallback(new MediaSession.Callback() {
+			@Override public void onPlay() { nativeCommand(CMD_PLAY); }
+			@Override public void onPause() { nativeCommand(CMD_PAUSE); }
+			@Override public void onSkipToNext() { nativeCommand(CMD_NEXT); }
+			@Override public void onSkipToPrevious() { nativeCommand(CMD_PREV); }
+			@Override public void onStop() { nativeCommand(CMD_STOP); }
+			@Override public void onSeekTo(long pos) { nativeSeek(pos / 1000.0); }
+			@Override public void onPlayFromMediaId(String mediaId, android.os.Bundle extras) {
+				CassetteAutoService.playMediaId(mediaId);
+			}
+			@Override public void onPlayFromSearch(String query, android.os.Bundle extras) {
+				CassetteAutoService.playFromSearch(query);
+			}
+			@Override public void onCustomAction(String action, android.os.Bundle extras) {
+				if (ACTION_LIKE.equals(action)) nativeCommand(CMD_LIKE);
+				else if (ACTION_SHUFFLE.equals(action)) nativeCommand(CMD_SHUFFLE);
+			}
+		}, main);
+		session.setPlaybackState(state(PlaybackState.STATE_NONE, 0));
 	}
 
 	public static void update(final String title, final String artist, final String album,
