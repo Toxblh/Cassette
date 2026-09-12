@@ -12,4 +12,8 @@ G_BEGIN_DECLS
 
 void cassette_android_set_bars_colors (guint32 top, guint32 bottom);
 
+/* TRUE on Android Automotive (a car head unit), where the system bars are
+ * opaque: the app runs immersive so its content fills the whole display. */
+gboolean cassette_android_is_automotive (void);
+
 G_END_DECLS

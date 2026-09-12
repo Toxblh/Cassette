@@ -307,6 +307,15 @@ namespace Cassette {
 
                 main_window.present ();
 
+#if ANDROID
+                // A car head unit's status bar and dock are opaque and the
+                // app cannot draw under them, so go immersive there and use
+                // the whole display.
+                if (cassette_android_is_automotive ()) {
+                    main_window.fullscreen ();
+                }
+#endif
+
                 if (_application_state == ApplicationState.LOCAL) {
                     main_window.load_local_views ();
                 } else {
