@@ -1,5 +1,9 @@
 package space.rirusha.cassette;
 
+import android.content.Context;
+import android.graphics.Bitmap;
+import android.graphics.Canvas;
+import android.graphics.drawable.Drawable;
 import android.media.MediaDescription;
 import android.media.browse.MediaBrowser;
 import android.net.Uri;
@@ -24,14 +28,17 @@ import java.util.concurrent.atomic.AtomicLong;
  * turns the JSON into MediaItems, hands the session token to the car, and
  * forwards play commands.
  *
- * Cover art is an icon URI to CassetteImageProvider (the car will not render
- * an http icon URI, and ignores a bitmap).
+ * Cover art is an icon URI to CassetteImageProvider. Android Auto lists
+ * (playable) rows load that URI, but the car's tab bar is drawn from the
+ * description's bitmap, so browsable items (the root tabs) also carry the
+ * icon as a Bitmap.
  *
  * The MediaSession itself is the one SessionBridge already keeps for the lock
  * screen and notification; this service just publishes it to Android Auto.
  */
 public class CassetteAutoService extends MediaBrowserService {
 	private static final String TAG = "CassetteAuto";
+	private static Context appContext;
 
 	private static final Handler main = new Handler(Looper.getMainLooper());
 	private static final AtomicLong nextRequest = new AtomicLong();
@@ -45,6 +52,7 @@ public class CassetteAutoService extends MediaBrowserService {
 	@Override
 	public void onCreate() {
 		super.onCreate();
+		appContext = getApplicationContext();
 		SessionBridge.ensureSession();
 		setSessionToken(SessionBridge.token());
 	}
@@ -80,6 +88,7 @@ public class CassetteAutoService extends MediaBrowserService {
 						.setTitle(o.optString("title"))
 						.setSubtitle(o.optString("subtitle"));
 				String icon = o.optString("icon", "");
+				boolean playable = o.optBoolean("playable", false);
 				if (!icon.isEmpty()) {
 					String path;
 					if (icon.startsWith("builtin:")) {
@@ -88,8 +97,15 @@ public class CassetteAutoService extends MediaBrowserService {
 						path = "url/" + Uri.encode(icon);
 					}
 					d.setIconUri(Uri.parse("content://" + CassetteImageProvider.AUTHORITY + "/" + path));
+					// The car tab bar is drawn from the bitmap, not the URI.
+					if (!playable && icon.startsWith("builtin:")) {
+						Bitmap bitmap = builtinBitmap(icon.substring("builtin:".length()));
+						if (bitmap != null) {
+							d.setIconBitmap(bitmap);
+						}
+					}
 				}
-				int flags = o.optBoolean("playable", false)
+				int flags = playable
 						? MediaBrowser.MediaItem.FLAG_PLAYABLE
 						: MediaBrowser.MediaItem.FLAG_BROWSABLE;
 				items.add(new MediaBrowser.MediaItem(d.build(), flags));
@@ -104,4 +120,24 @@ public class CassetteAutoService extends MediaBrowserService {
 	/** Called from SessionBridge's MediaSession callback (main thread). */
 	static void playMediaId(String mediaId) { nativePlayMediaId(mediaId); }
 	static void playFromSearch(String query) { nativePlayFromSearch(query); }
+
+	/** Rasterise one of the app's vector drawables for the car tab bar. */
+	private static Bitmap builtinBitmap(String name) {
+		if (appContext == null) {
+			return null;
+		}
+		String resource = name.replace('-', '_');
+		int id = appContext.getResources().getIdentifier(resource, "drawable", appContext.getPackageName());
+		Drawable drawable = id == 0 ? null : appContext.getDrawable(id);
+		if (drawable == null) {
+			return null;
+		}
+		int size = 128;
+		int inset = size / 8;
+		Bitmap bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);
+		Canvas canvas = new Canvas(bitmap);
+		drawable.setBounds(inset, inset, size - inset, size - inset);
+		drawable.draw(canvas);
+		return bitmap;
+	}
 }
