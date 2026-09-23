@@ -44,4 +44,10 @@ adb install -r cassette.apk
 adb logcat -s Cassette:V GLib:V Gtk:V
 ```
 
+Forgejo builds the arm64 release APK with `.forgejo/workflows/android.yml` and
+`ci-forgejo.sh`. The artifact is unsigned unless all three repository secrets
+`ANDROID_KEYSTORE_B64`, `ANDROID_KEYSTORE_PASSWORD`, and `ANDROID_KEY_ALIAS`
+are set. The GitHub workflow runs on the continuing `madness` and `master`
+branches too.
+
 Only `arm64-v8a` is built. Translations (`i18n` install tag) are not packed yet.

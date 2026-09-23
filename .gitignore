@@ -24,6 +24,7 @@ repo
 Cassette.app
 # Android (pixiewood) build: generated project and the wraps/subprojects
 # that `pixiewood prepare` and android.mk drop into subprojects/.
+/subprojects/
 /.pixiewood/
 /.buildconfig
 /.cache/

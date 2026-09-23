@@ -1,0 +1,43 @@
+name: iOS simulator (0.2)
+
+on:
+  push:
+    branches: [madness, master]
+  pull_request:
+    branches: [madness, master]
+  workflow_dispatch:
+
+jobs:
+  simulator:
+    runs-on: macos-26
+    timeout-minutes: 180
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Install build tools
+        run: |
+          brew install meson ninja pkg-config vala blueprint-compiler \
+            gtk4 libadwaita sassc gperf gettext cmake flex bison libtool
+
+      - name: Configure
+        run: build-aux/ios/setup-cassette.sh build-ios
+
+      - name: Build
+        run: ninja -C build-ios
+
+      - name: Package simulator app
+        run: |
+          CASSETTE_PACKAGE_ONLY=1 build-aux/ios/package-cassette.sh build-ios
+          codesign --verify --deep build-ios/Cassette.app
+          ditto -c -k --sequesterRsrc --keepParent \
+            build-ios/Cassette.app Cassette-iOS-simulator.zip
+
+      - name: Upload app
+        uses: actions/upload-artifact@v4
+        with:
+          name: Cassette-iOS-simulator
+          path: Cassette-iOS-simulator.zip
+          if-no-files-found: error

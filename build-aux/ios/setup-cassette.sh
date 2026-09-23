@@ -7,7 +7,11 @@ BUILD=${1:-$ROOT/build-ios}
 shift 2>/dev/null || true
 export PKG_CONFIG_LIBDIR=/nonexistent
 cd "$ROOT"
-exec meson setup "$BUILD" --cross-file "$HERE/ios-simulator-arm64.cross" \
+"$HERE/prepare-subprojects.sh"
+mkdir -p "$BUILD"
+sdk=$(xcrun --sdk iphonesimulator --show-sdk-path)
+sed "s|^sdk = .*|sdk = '$sdk'|" "$HERE/ios-simulator-arm64.cross" > "$BUILD/ios-simulator-arm64.cross"
+exec meson setup "$BUILD" --cross-file "$BUILD/ios-simulator-arm64.cross" \
  --prefix /usr -Dbuildtype=debugoptimized -Ddefault_library=static \
  -Dwith_webkit=false \
  -Dgtk:ios-backend=true -Dgtk:macos-backend=false -Dgtk:x11-backend=false -Dgtk:wayland-backend=false -Dgtk:broadway-backend=false \

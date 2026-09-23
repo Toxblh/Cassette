@@ -38,8 +38,14 @@ if get_option('is_devel')
   name_suffix = ' (Devel)'
   app_id_suffix = '.Devel'
 
-  find_program('git', required: true)
-  vcs_tag = run_command('git', 'rev-parse', '--short', 'HEAD', check: true).stdout().strip()
+  git = find_program('git', required: false)
+  vcs_tag = 'unknown'
+  if git.found()
+    git_rev = run_command(git, 'rev-parse', '--short', 'HEAD', check: false)
+    if git_rev.returncode() == 0
+      vcs_tag = git_rev.stdout().strip()
+    endif
+  endif
   version_suffix = '-dev.@0@'.format (vcs_tag)
 endif
 

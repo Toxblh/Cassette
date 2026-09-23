@@ -1,8 +1,9 @@
 id: space.rirusha.Cassette.Devel
 runtime: org.gnome.Platform
-runtime-version: 'master'
+runtime-version: '50'
 sdk: org.gnome.Sdk
 command: cassette
+rename-appdata-file: space.rirusha.Cassette.metainfo.xml
 finish-args:
   - --share=network
   - --share=ipc

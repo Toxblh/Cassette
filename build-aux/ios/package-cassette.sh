@@ -1,6 +1,7 @@
 #!/bin/sh
 # Bundle Cassette as Cassette.app and install it in the simulator.
 # Usage: package-cassette.sh [builddir] [simulator udid|booted]
+# Set CASSETTE_PACKAGE_ONLY=1 to create the app without installing it.
 set -e
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$HERE/../.."
@@ -11,6 +12,7 @@ BUILD="$(cd "$BUILD" && pwd)"
 APP="$BUILD/Cassette.app"
 STAGE="$BUILD/stage"
 BUNDLE_ID=space.rirusha.cassette
+VERSION=$(meson introspect "$BUILD" --projectinfo | python3 -c 'import json,sys; print(json.load(sys.stdin)["version"])')
 
 rm -rf "$STAGE" "$APP"
 DESTDIR="$STAGE" meson install -C "$BUILD" --no-rebuild --quiet
@@ -38,7 +40,7 @@ cat > "$APP/Info.plist" <<XML
 <key>CFBundleDisplayName</key><string>Cassette</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleVersion</key><string>1</string>
-<key>CFBundleShortVersionString</key><string>0.2.4</string>
+<key>CFBundleShortVersionString</key><string>$VERSION</string>
 <key>MinimumOSVersion</key><string>17.0</string>
 <key>UIDeviceFamily</key><array><integer>1</integer><integer>2</integer></array>
 <key>LSRequiresIPhoneOS</key><true/>
@@ -63,7 +65,11 @@ xcrun actool "$HERE/assets" --compile "$APP" \
   --app-icon AppIcon --output-partial-info-plist "$BUILD/actool-icon.plist" \
   --target-device iphone --target-device ipad >/dev/null
 
-codesign -s - --force --deep "$APP" >/dev/null 2>&1 || true
-xcrun simctl install "$UDID" "$APP"
-xcrun simctl terminate "$UDID" "$BUNDLE_ID" >/dev/null 2>&1 || true
-echo "installed $APP"
+codesign -s - --force --deep "$APP"
+if [ "${CASSETTE_PACKAGE_ONLY:-0}" = 1 ]; then
+  echo "packaged $APP"
+else
+  xcrun simctl install "$UDID" "$APP"
+  xcrun simctl terminate "$UDID" "$BUNDLE_ID" >/dev/null 2>&1 || true
+  echo "installed $APP"
+fi

@@ -17,9 +17,9 @@ MANIFEST     := $(AUX)/space.rirusha.Cassette.xml
 PROJECT      := .pixiewood/android
 APK_DIR      := $(PROJECT)/app/build/outputs/apk/$(if $(release),release,debug)
 
-.PHONY: android android-blueprints android-subprojects android-prepare android-patch-gtk android-patch-intl android-generate android-patch android-build android-sign android-clean
+.PHONY: android android-blueprints android-subprojects android-prepare android-patch-gtk android-patch-glib android-patch-intl android-generate android-patch android-build android-sign android-clean
 
-android: android-subprojects android-prepare android-patch-gtk android-patch-intl android-generate android-patch android-build
+android: android-subprojects android-prepare android-patch-gtk android-patch-glib android-patch-intl android-generate android-patch android-build
 
 # blueprint-compiler validates against the host's Gtk/Adw typelibs, so the .blp
 # files are compiled wherever those are new enough (the host, not the build
@@ -58,6 +58,14 @@ android-patch-gtk:
 		elif git -C subprojects/gtk apply "$(CURDIR)/$$p"; then echo "$$p: applied"; \
 		else echo "$$p: FAILED to apply"; exit 1; fi; \
 	done
+
+# GTK's Android runtime calls this GLib symbol across shared-library bounds.
+# Its private declaration needs default visibility in the cross build.
+android-patch-glib:
+	@p="$(CURDIR)/$(AUX)/patches/glib-android-user-dirs.patch"; \
+		if git -C subprojects/glib apply --reverse --check "$$p" 2>/dev/null; then echo "$$p: already applied"; \
+		elif git -C subprojects/glib apply "$$p"; then echo "$$p: applied"; \
+		else echo "$$p: FAILED to apply"; exit 1; fi
 
 android-generate:
 	$(PIXIEWOOD) generate

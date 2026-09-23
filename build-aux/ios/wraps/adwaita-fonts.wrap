@@ -1,0 +1,8 @@
+[wrap-git]
+url = https://github.com/GNOME/adwaita-fonts
+revision = 0c79765f2bef25b38902fd8497616ac28185254c
+depth = 1
+diff_files = adwaita-fonts_android.patch
+
+[provide]
+adwaita-fonts = adwaita_fonts_dep

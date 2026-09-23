@@ -1,0 +1,38 @@
+name: Android APK (0.2)
+
+on:
+  push:
+    branches: [madness, master]
+  pull_request:
+    branches: [madness, master]
+  workflow_dispatch:
+
+jobs:
+  apk:
+    runs-on: als-huge
+    timeout-minutes: 240
+    container:
+      image: node:22-trixie@sha256:ae3b84a81a94a99f50110663c936ccda31a3bbf1e91bb6b23c638669f777a6f2
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+
+      - name: Build arm64 APK
+        run: sh build-aux/android/ci-forgejo.sh
+        env:
+          ANDROID_KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+
+      - name: Meson log on failure
+        if: failure()
+        run: tail -n 200 .pixiewood/bin-aarch64/meson-logs/meson-log.txt || true
+
+      - name: Upload APKs
+        uses: actions/upload-artifact@v3
+        with:
+          name: Cassette-arm64-v8a
+          path: apks/*.apk
+          if-no-files-found: error

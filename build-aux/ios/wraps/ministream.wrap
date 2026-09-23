@@ -1,0 +1,9 @@
+[wrap-git]
+directory = ministream
+url = https://gitlab.gnome.org/GNOME/ministream.git
+push-url = ssh://git@ssh.gitlab.gnome.org:GNOME/ministream.git
+revision = 0.99.1
+depth = 1
+
+[provide]
+dependency_names = ministream

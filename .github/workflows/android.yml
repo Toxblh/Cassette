@@ -1,6 +1,5 @@
 # Android APK through pixiewood. The whole GTK stack is built from wraps, so a
-# run takes ~20-30 min; it only triggers on pushes to the android branches and
-# by hand. Pattern: GeopJr/Tuba .github/workflows/android.yml.
+# run takes ~20-30 min; it runs for the continuing 0.2 branches and by hand.
 #
 # The runner is ubuntu-26.04 because blueprint-compiler needs Gtk/Adw typelibs
 # new enough for our .blp files (Adw.ButtonRow, Adw.Dialog); the vapis vala does
@@ -13,8 +12,10 @@ name: Android
 
 on:
   push:
-    branches: [android, 'android-*']
+    branches: [madness, master, android, 'android-*']
     paths-ignore: ['**.md', 'docs/**']
+  pull_request:
+    branches: [madness, master]
   workflow_dispatch:
 
 concurrency:

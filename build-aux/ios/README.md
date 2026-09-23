@@ -54,6 +54,13 @@ first upload.
 
 ## Cassette
 
+`setup-cassette.sh` prepares the pinned wraps in `wraps/` and applies the
+GTK, GLib and libadwaita patches on a clean checkout. The simulator SDK path
+is read from the installed Xcode. GitHub Actions builds and uploads a
+simulator `.app` archive; locally, set `CASSETTE_PACKAGE_ONLY=1` when running
+`package-cassette.sh` to package without installing into a simulator. The
+device and TestFlight scripts still require your Apple signing setup.
+
 ```sh
 build-aux/ios/setup-cassette.sh          # meson setup build-ios (cross, static, all subprojects)
 ninja -C build-ios

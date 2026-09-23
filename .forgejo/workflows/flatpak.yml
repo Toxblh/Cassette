@@ -1,0 +1,42 @@
+name: Flatpak (0.2)
+
+on:
+  push:
+    branches: [madness, master]
+  pull_request:
+    branches: [madness, master]
+  workflow_dispatch:
+
+jobs:
+  bundle:
+    runs-on: als-huge
+    timeout-minutes: 120
+    container:
+      # GNOME 50 SDK and flatpak-builder are already installed.
+      image: ghcr.io/flathub-infra/flatpak-github-actions@sha256:bdbeb241813021cf96f3001ccceea46b8e0c3c46a316172992fd60ad9dfc50e2
+      options: --privileged
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+
+      - name: Build bundle
+        run: |
+          set -eu
+          dbus-uuidgen > /etc/machine-id
+          dbus-run-session -- flatpak-builder --disable-rofiles-fuse \
+            --force-clean --repo=repo build-dir \
+            build-aux/flatpak/space.rirusha.Cassette.Devel.yml
+          arch=$(flatpak --default-arch)
+          flatpak build-bundle \
+            --runtime-repo=https://flathub.org/repo/flathub.flatpakrepo \
+            repo "Cassette-$arch.flatpak" \
+            space.rirusha.Cassette.Devel
+
+      - name: Upload Flatpak
+        uses: actions/upload-artifact@v3
+        with:
+          name: Cassette-Flatpak
+          path: Cassette-*.flatpak
+          if-no-files-found: error
