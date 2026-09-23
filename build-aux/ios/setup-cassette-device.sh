@@ -8,7 +8,7 @@ shift 2>/dev/null || true
 export PKG_CONFIG_LIBDIR=/nonexistent
 cd "$ROOT"
 exec meson setup "$BUILD" --cross-file "$HERE/ios-device-arm64.cross" \
- --prefix /usr -Dbuildtype=debugoptimized -Ddefault_library=static \
+ --prefix /usr -Dbuildtype="${IOS_BUILDTYPE:-debugoptimized}" -Ddefault_library=static \
  -Dwith_webkit=false \
  -Dgtk:ios-backend=true -Dgtk:macos-backend=false -Dgtk:x11-backend=false -Dgtk:wayland-backend=false -Dgtk:broadway-backend=false \
  -Dgtk:media-gstreamer=disabled -Dgtk:print-cups=disabled -Dgtk:vulkan=disabled -Dgtk:build-demos=false -Dgtk:build-testsuite=false -Dgtk:build-examples=false -Dgtk:build-tests=false -Dgtk:introspection=disabled -Dgtk:documentation=false -Dgtk:sysprof=disabled \

@@ -9,8 +9,9 @@ the WKWebView sign-in opens but was not driven to the end. The app icon
 is a layered asset catalog (`assets/`) with light/dark/tinted variants,
 compiled by `actool` in the package scripts. Not done: media keys/lock
 screen (MPRemoteCommandCenter is wired but untested), background audio
-checks, GL rendering, App Store distribution (needs a distribution
-profile and, for TestFlight, an App Store Connect app record).
+checks, GL rendering; App Store distribution has a TestFlight pipeline
+(`fastlane`, below) that needs the App Store Connect app record and the
+first upload.
 
 ## Layout
 
@@ -78,6 +79,35 @@ To test with an existing session copy `~/.local/share/cassette/cassette.db`
 (`xcrun simctl get_app_container <udid> space.rirusha.cassette data`).
 Russian UI: `xcrun simctl spawn <udid> defaults write "Apple Global Domain" AppleLanguages -array ru en`.
 `SIMCTL_CHILD_GDK_IOS_DEBUG_TYPE="ms:text"` types on the keyboard responder.
+
+## TestFlight
+
+Distribution builds reuse the device cross setup in release mode. One-time
+setup in App Store Connect (the API key cannot create an app record):
+
+1. Register the App ID `space.rirusha.cassette` (developer.apple.com →
+   Identifiers) and create the app record (App Store Connect → My Apps → +,
+   iOS, that bundle ID).
+2. Put an App Store Connect API key (App Manager role) at
+   `~/.appstoreconnect/private_keys/AuthKey_<KEYID>.p8` and set `ASC_KEY_ID`
+   and `ASC_ISSUER_ID` in the gitignored `fastlane/.env`.
+
+Then:
+
+```sh
+cd build-aux/ios
+fastlane certs   # Apple Distribution cert + App Store profile (build/AppStore.mobileprovision)
+fastlane beta    # release build → Cassette.ipa → upload to TestFlight
+```
+
+`package-cassette-testflight.sh` keeps GTK in `Frameworks/` (App Store
+validation rejects a dylib next to the executable), signs with the
+distribution identity and the `beta-reports-active` entitlement, and drops
+the broken fontconfig symlinks the staged `/usr` prefix leaves behind. Bump
+`IOS_MARKETING_VERSION`/`IOS_BUILD_NUMBER` per upload (the build number
+defaults to a timestamp). External testers later need full metadata and Beta
+App Review — a third-party Yandex client is a real guideline 5.2.1 rejection
+risk; internal testers skip that.
 
 ## Flow (hello app)
 
