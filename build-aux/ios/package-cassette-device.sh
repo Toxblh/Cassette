@@ -1,31 +1,33 @@
 #!/bin/sh
-# Bundle Cassette as Cassette.app and install it in the simulator.
-# Usage: package-cassette.sh [builddir] [simulator udid|booted]
+# Bundle Cassette for a real iPhone and install it via devicectl.
+# Usage: package-cassette-device.sh [builddir] [device udid]
+# Signing identity / profile come from the environment (see ios README):
+#   IOS_DEV_CERT    codesign identity (defaults to the author's)
+#   IOS_DEV_PROFILE path to the development .mobileprovision
 set -e
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$HERE/../.."
-BUILD=${1:-$ROOT/build-ios}
-UDID=${2:-booted}
+BUILD=${1:-$ROOT/build-ios-device}
+UDID=${2:-00008140-000E048111E0801C}
 # meson resolves DESTDIR against the build directory, so it has to be absolute
 BUILD="$(cd "$BUILD" && pwd)"
 APP="$BUILD/Cassette.app"
 STAGE="$BUILD/stage"
 BUNDLE_ID=space.rirusha.cassette
+CERT="${IOS_DEV_CERT:-Apple Development: Pavel Subach (P84QNSJRGS)}"
+PROFILE="${IOS_DEV_PROFILE:?set IOS_DEV_PROFILE to the .mobileprovision path}"
 
 rm -rf "$STAGE" "$APP"
 DESTDIR="$STAGE" meson install -C "$BUILD" --no-rebuild --quiet
 mkdir -p "$APP"
 cp "$BUILD/src/cassette" "$APP/Cassette"
 cp -R "$STAGE/usr/share" "$APP/share"
-# the compiled schema file is what GSettings actually reads
 glib-compile-schemas "$APP/share/glib-2.0/schemas"
 mkdir -p "$APP/etc"
 [ -d "$STAGE/etc" ] && cp -R "$STAGE/etc/." "$APP/etc/"
 [ -d "$STAGE/usr/etc" ] && cp -R "$STAGE/usr/etc/." "$APP/etc/"
-# only libgtk is shared; the app and the rest are static
 cp "$BUILD/subprojects/gtk/gtk/libgtk-4.1.dylib" "$APP/"
 install_name_tool -add_rpath @executable_path "$APP/Cassette" 2>/dev/null || true
-# Mozilla CA bundle for OpenSSL (macOS ships one)
 cp /etc/ssl/cert.pem "$APP/cacert.pem"
 
 cat > "$APP/Info.plist" <<XML
@@ -59,11 +61,29 @@ XML
 
 # App icon (asset catalog -> Assets.car + legacy .png variants)
 xcrun actool "$HERE/assets" --compile "$APP" \
-  --platform iphonesimulator --minimum-deployment-target 17.0 \
+  --platform iphoneos --minimum-deployment-target 17.0 \
   --app-icon AppIcon --output-partial-info-plist "$BUILD/actool-icon.plist" \
   --target-device iphone --target-device ipad >/dev/null
 
-codesign -s - --force --deep "$APP" >/dev/null 2>&1 || true
-xcrun simctl install "$UDID" "$APP"
-xcrun simctl terminate "$UDID" "$BUNDLE_ID" >/dev/null 2>&1 || true
-echo "installed $APP"
+cp "$PROFILE" "$APP/embedded.mobileprovision"
+
+cat > "$APP/Entitlements.plist" <<XML
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>application-identifier</key>
+	<string>DCQJFSH9BA.space.rirusha.cassette</string>
+	<key>com.apple.developer.team-identifier</key>
+	<string>VZ5Q5CVRUL</string>
+	<key>get-task-allow</key>
+	<true/>
+</dict>
+</plist>
+XML
+
+codesign --force --sign "$CERT" --timestamp=none "$APP/libgtk-4.1.dylib"
+codesign --force --sign "$CERT" --entitlements "$APP/Entitlements.plist" --timestamp=none --generate-entitlement-der "$APP"
+
+echo "signed $APP"
+xcrun devicectl device install app --device "$UDID" "$APP"

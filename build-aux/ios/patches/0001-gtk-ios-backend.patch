@@ -1,83 +1,3 @@
-From 3e8bfb5fa563ee032b724ebb40928cefdd8a45b6 Mon Sep 17 00:00:00 2001
-From: Anton Palgunov <toxblh@gmail.com>
-Date: Wed, 9 Sep 2026 02:26:44 +0300
-Subject: [PATCH 1/2] gdk: add an iOS backend (UIKit, cairo only)
-
-A minimal GDK backend for iOS: UIKit owns the main thread, GTK runs
-on its own thread and hops to the main queue for UIKit work. Each
-GdkSurface is a UIView; toplevels fill the root view, popups are
-subviews positioned by the popup layout helper. Drawing goes through
-a cairo image buffer that becomes the layer's CGImage each frame.
-Touches become GDK touch events (the first finger emulates the
-pointer); a GDK grab redirects hit testing to the grabbed view so
-autohide popups close on outside taps. No GL, no clipboard, no
-on-screen keyboard yet.
-
-The macOS-only pieces (SDK version check, quartz color picker) are
-now gated on the macOS backend instead of __APPLE__.
----
- gdk/gdkconfig.h.meson                |   1 +
- gdk/gdkdisplaymanager.c              |   7 +
- gdk/ios/gdkios.h                     |  14 +
- gdk/ios/gdkioscairocontext-private.h |  16 ++
- gdk/ios/gdkioscairocontext.c         | 179 ++++++++++++
- gdk/ios/gdkiosdisplay-private.h      |  34 +++
- gdk/ios/gdkiosdisplay.c              | 227 +++++++++++++++
- gdk/ios/gdkiosdisplay.h              |  17 ++
- gdk/ios/gdkiosevents-private.h       |  16 ++
- gdk/ios/gdkiosevents.c               | 140 ++++++++++
- gdk/ios/gdkiosmonitor-private.h      |  22 ++
- gdk/ios/gdkiosmonitor.c              |  34 +++
- gdk/ios/gdkiosmonitor.h              |  17 ++
- gdk/ios/gdkiospopup-private.h        |  23 ++
- gdk/ios/gdkiospopup.c                | 181 ++++++++++++
- gdk/ios/gdkiospopup.h                |  17 ++
- gdk/ios/gdkiosruntime-private.h      |  31 +++
- gdk/ios/gdkiosruntime.c              | 251 +++++++++++++++++
- gdk/ios/gdkiosruntime.h              |  23 ++
- gdk/ios/gdkiosseat-private.h         |  72 +++++
- gdk/ios/gdkiosseat.c                 | 357 ++++++++++++++++++++++++
- gdk/ios/gdkiosseat.h                 |  27 ++
- gdk/ios/gdkiossurface-private.h      |  63 +++++
- gdk/ios/gdkiossurface.c              | 396 +++++++++++++++++++++++++++
- gdk/ios/gdkiossurface.h              |  19 ++
- gdk/ios/gdkiostoplevel-private.h     |  23 ++
- gdk/ios/gdkiostoplevel.c             | 231 ++++++++++++++++
- gdk/ios/gdkiostoplevel.h             |  17 ++
- gdk/ios/meson.build                  |  37 +++
- gdk/meson.build                      |   3 +-
- gtk/gtkcolorpicker.c                 |   4 +-
- meson.build                          |   7 +-
- meson.options                        |   5 +
- 33 files changed, 2507 insertions(+), 4 deletions(-)
- create mode 100644 gdk/ios/gdkios.h
- create mode 100644 gdk/ios/gdkioscairocontext-private.h
- create mode 100644 gdk/ios/gdkioscairocontext.c
- create mode 100644 gdk/ios/gdkiosdisplay-private.h
- create mode 100644 gdk/ios/gdkiosdisplay.c
- create mode 100644 gdk/ios/gdkiosdisplay.h
- create mode 100644 gdk/ios/gdkiosevents-private.h
- create mode 100644 gdk/ios/gdkiosevents.c
- create mode 100644 gdk/ios/gdkiosmonitor-private.h
- create mode 100644 gdk/ios/gdkiosmonitor.c
- create mode 100644 gdk/ios/gdkiosmonitor.h
- create mode 100644 gdk/ios/gdkiospopup-private.h
- create mode 100644 gdk/ios/gdkiospopup.c
- create mode 100644 gdk/ios/gdkiospopup.h
- create mode 100644 gdk/ios/gdkiosruntime-private.h
- create mode 100644 gdk/ios/gdkiosruntime.c
- create mode 100644 gdk/ios/gdkiosruntime.h
- create mode 100644 gdk/ios/gdkiosseat-private.h
- create mode 100644 gdk/ios/gdkiosseat.c
- create mode 100644 gdk/ios/gdkiosseat.h
- create mode 100644 gdk/ios/gdkiossurface-private.h
- create mode 100644 gdk/ios/gdkiossurface.c
- create mode 100644 gdk/ios/gdkiossurface.h
- create mode 100644 gdk/ios/gdkiostoplevel-private.h
- create mode 100644 gdk/ios/gdkiostoplevel.c
- create mode 100644 gdk/ios/gdkiostoplevel.h
- create mode 100644 gdk/ios/meson.build
-
 diff --git a/gdk/gdkconfig.h.meson b/gdk/gdkconfig.h.meson
 index 17276e0..4b73ce2 100644
 --- a/gdk/gdkconfig.h.meson
@@ -342,6 +262,236 @@ index 0000000..c60b5e3
 +gdk_ios_cairo_context_init (GdkIosCairoContext *self)
 +{
 +}
+diff --git a/gdk/ios/gdkiosclipboard-private.h b/gdk/ios/gdkiosclipboard-private.h
+new file mode 100644
+index 0000000..4946101
+--- /dev/null
++++ b/gdk/ios/gdkiosclipboard-private.h
+@@ -0,0 +1,17 @@
++/* GDK iOS backend: clipboard. SPDX-License-Identifier: LGPL-2.1-or-later */
++
++#pragma once
++
++#include "gdkclipboardprivate.h"
++
++#include "gdkiosdisplay-private.h"
++
++G_BEGIN_DECLS
++
++#define GDK_TYPE_IOS_CLIPBOARD (_gdk_ios_clipboard_get_type ())
++
++G_DECLARE_FINAL_TYPE (GdkIosClipboard, _gdk_ios_clipboard, GDK, IOS_CLIPBOARD, GdkClipboard)
++
++GdkClipboard *_gdk_ios_clipboard_new (GdkIosDisplay *display);
++
++G_END_DECLS
+diff --git a/gdk/ios/gdkiosclipboard.c b/gdk/ios/gdkiosclipboard.c
+new file mode 100644
+index 0000000..3fb6f9d
+--- /dev/null
++++ b/gdk/ios/gdkiosclipboard.c
+@@ -0,0 +1,201 @@
++/* GDK iOS backend: clipboard backed by UIPasteboard.
++ * SPDX-License-Identifier: LGPL-2.1-or-later
++ */
++
++#include "config.h"
++
++#import <UIKit/UIKit.h>
++
++#include "gdkiosclipboard-private.h"
++#include "gdkiosruntime-private.h"
++
++struct _GdkIosClipboard
++{
++  GdkClipboard parent_instance;
++
++  NSInteger last_change_count;
++  guint check_source;
++};
++
++G_DEFINE_TYPE (GdkIosClipboard, _gdk_ios_clipboard, GDK_TYPE_CLIPBOARD)
++
++static GdkContentFormats *
++gdk_ios_clipboard_text_formats (void)
++{
++  /* Advertise text unconditionally. UIPasteboard has no way to ask
++   * whether it holds text without triggering the iOS paste permission
++   * alert, and that must only happen when the user really pastes. */
++  return gdk_content_formats_new_for_gtype (G_TYPE_STRING);
++}
++
++static void
++gdk_ios_clipboard_claim_remote_text (GdkIosClipboard *self)
++{
++  GdkContentFormats *formats = gdk_ios_clipboard_text_formats ();
++
++  self->last_change_count = [UIPasteboard generalPasteboard].changeCount;
++  gdk_clipboard_claim_remote (GDK_CLIPBOARD (self), formats);
++  gdk_content_formats_unref (formats);
++}
++
++/* Poll the pasteboard's change counter. Reading it is free and silent,
++ * unlike reading the contents, so we only need to know whether another
++ * app took ownership and our local contents are stale. */
++static gboolean
++gdk_ios_clipboard_check_change (gpointer data)
++{
++  GdkIosClipboard *self = data;
++
++  if ([UIPasteboard generalPasteboard].changeCount != self->last_change_count)
++    {
++      g_debug ("iOS clipboard: pasteboard changed externally, claiming remote text");
++      gdk_ios_clipboard_claim_remote_text (self);
++    }
++
++  return G_SOURCE_CONTINUE;
++}
++
++static void
++gdk_ios_clipboard_read_async (GdkClipboard       *clipboard,
++                              GdkContentFormats  *formats,
++                              int                 io_priority,
++                              GCancellable       *cancellable,
++                              GAsyncReadyCallback callback,
++                              gpointer            user_data)
++{
++  GTask *task;
++  __block char *text = NULL;
++
++  task = g_task_new (clipboard, cancellable, callback, user_data);
++  g_task_set_priority (task, io_priority);
++  g_task_set_source_tag (task, gdk_ios_clipboard_read_async);
++
++  gdk_ios_run_on_main_sync (^{
++    NSString *string = [UIPasteboard generalPasteboard].string;
++    if (string != nil)
++      text = g_strdup (string.UTF8String);
++  });
++
++  if (text == NULL)
++    {
++      g_debug ("iOS clipboard: pasteboard holds no text");
++      g_task_return_new_error (task, G_IO_ERROR, G_IO_ERROR_NOT_FOUND,
++                               "The pasteboard does not contain text");
++    }
++  else
++    {
++      GInputStream *stream = g_memory_input_stream_new_from_data (text, -1, g_free);
++      g_debug ("iOS clipboard: read %zu bytes of text", strlen (text));
++      g_task_set_task_data (task, (gpointer) g_intern_string ("text/plain;charset=utf-8"), NULL);
++      g_task_return_pointer (task, stream, g_object_unref);
++    }
++
++  g_object_unref (task);
++}
++
++static GInputStream *
++gdk_ios_clipboard_read_finish (GdkClipboard  *clipboard,
++                               GAsyncResult  *result,
++                               const char   **out_mime_type,
++                               GError       **error)
++{
++  g_return_val_if_fail (g_task_is_valid (result, clipboard), NULL);
++
++  if (out_mime_type != NULL)
++    *out_mime_type = g_task_get_task_data (G_TASK (result));
++
++  return g_task_propagate_pointer (G_TASK (result), error);
++}
++
++static gboolean
++gdk_ios_clipboard_claim (GdkClipboard       *clipboard,
++                         GdkContentFormats  *formats,
++                         gboolean            local,
++                         GdkContentProvider *content)
++{
++  GdkIosClipboard *self = (GdkIosClipboard *) clipboard;
++  gboolean ret;
++
++  ret = GDK_CLIPBOARD_CLASS (_gdk_ios_clipboard_parent_class)->claim (clipboard, formats, local, content);
++
++  if (local && content != NULL)
++    {
++      GValue value = G_VALUE_INIT;
++      GError *error = NULL;
++
++      g_value_init (&value, G_TYPE_STRING);
++      if (gdk_content_provider_get_value (content, &value, &error))
++        {
++          const char *text = g_value_get_string (&value);
++
++          if (text != NULL)
++            {
++              g_debug ("iOS clipboard: copied %zu bytes to UIPasteboard", strlen (text));
++              gdk_ios_run_on_main_sync (^{
++                [UIPasteboard generalPasteboard].string = [NSString stringWithUTF8String:text];
++              });
++              self->last_change_count = [UIPasteboard generalPasteboard].changeCount;
++            }
++        }
++      else
++        {
++          g_debug ("iOS clipboard: provider is not text: %s",
++                   error != NULL ? error->message : "unknown error");
++          g_clear_error (&error);
++        }
++
++      g_value_unset (&value);
++    }
++
++  return ret;
++}
++
++static void
++gdk_ios_clipboard_finalize (GObject *object)
++{
++  GdkIosClipboard *self = (GdkIosClipboard *) object;
++
++  if (self->check_source != 0)
++    {
++      g_source_remove (self->check_source);
++      self->check_source = 0;
++    }
++
++  G_OBJECT_CLASS (_gdk_ios_clipboard_parent_class)->finalize (object);
++}
++
++static void
++_gdk_ios_clipboard_class_init (GdkIosClipboardClass *klass)
++{
++  GObjectClass *object_class = G_OBJECT_CLASS (klass);
++  GdkClipboardClass *clipboard_class = GDK_CLIPBOARD_CLASS (klass);
++
++  object_class->finalize = gdk_ios_clipboard_finalize;
++
++  clipboard_class->claim = gdk_ios_clipboard_claim;
++  clipboard_class->read_async = gdk_ios_clipboard_read_async;
++  clipboard_class->read_finish = gdk_ios_clipboard_read_finish;
++}
++
++static void
++_gdk_ios_clipboard_init (GdkIosClipboard *self)
++{
++}
++
++GdkClipboard *
++_gdk_ios_clipboard_new (GdkIosDisplay *display)
++{
++  GdkIosClipboard *self;
++
++  g_return_val_if_fail (GDK_IS_IOS_DISPLAY (display), NULL);
++
++  self = g_object_new (GDK_TYPE_IOS_CLIPBOARD,
++                       "display", display,
++                       NULL);
++
++  gdk_ios_clipboard_claim_remote_text (self);
++  self->check_source = g_timeout_add (500, gdk_ios_clipboard_check_change, self);
++  g_debug ("iOS clipboard: ready (pasteboard changeCount %ld)", (long) self->last_change_count);
++
++  return GDK_CLIPBOARD (self);
++}
 diff --git a/gdk/ios/gdkiosdisplay-private.h b/gdk/ios/gdkiosdisplay-private.h
 new file mode 100644
 index 0000000..085eabc
@@ -384,10 +534,10 @@ index 0000000..085eabc
 +G_END_DECLS
 diff --git a/gdk/ios/gdkiosdisplay.c b/gdk/ios/gdkiosdisplay.c
 new file mode 100644
-index 0000000..1b7e0b7
+index 0000000..8dc29c7
 --- /dev/null
 +++ b/gdk/ios/gdkiosdisplay.c
-@@ -0,0 +1,227 @@
+@@ -0,0 +1,228 @@
 +/* GDK iOS backend: GdkDisplay. SPDX-License-Identifier: LGPL-2.1-or-later */
 +
 +#include "config.h"
@@ -399,6 +549,7 @@ index 0000000..1b7e0b7
 +#include "gdkglcontextprivate.h"
 +
 +#include "gdkiosruntime-private.h"
++#include "gdkiosclipboard-private.h"
 +#include "gdkiosmonitor-private.h"
 +#include "gdkiossurface-private.h"
 +#include "gdkiostoplevel-private.h"
@@ -546,7 +697,7 @@ index 0000000..1b7e0b7
 +{
 +  GdkDisplay *display = (GdkDisplay *) self;
 +
-+  display->clipboard = gdk_clipboard_new (display);
++  display->clipboard = _gdk_ios_clipboard_new (self);
 +
 +  self->monitors = g_list_store_new (GDK_TYPE_IOS_MONITOR);
 +  self->seat = gdk_ios_seat_new (display);
@@ -928,10 +1079,10 @@ index 0000000..6a518d4
 +G_END_DECLS
 diff --git a/gdk/ios/gdkiospopup.c b/gdk/ios/gdkiospopup.c
 new file mode 100644
-index 0000000..c074eaa
+index 0000000..2fe49cf
 --- /dev/null
 +++ b/gdk/ios/gdkiospopup.c
-@@ -0,0 +1,181 @@
+@@ -0,0 +1,187 @@
 +/* GDK iOS backend: GdkPopup as a subview of its toplevel. SPDX-License-Identifier: LGPL-2.1-or-later */
 +
 +#include "config.h"
@@ -965,13 +1116,19 @@ index 0000000..c074eaa
 +  int shadow_left, shadow_right, shadow_top, shadow_bottom;
 +  gdk_popup_layout_get_shadow_width (layout, &shadow_left, &shadow_right, &shadow_top, &shadow_bottom);
 +
-+  GdkRectangle bounds = { 0, 0, parent_surface->width, parent_surface->height };
++  /* Keep popups inside the safe area (notch, status bar, home indicator). */
++  int safe_top, safe_bottom, safe_left, safe_right;
++  gdk_ios_get_safe_area (&safe_top, &safe_bottom, &safe_left, &safe_right);
++
++  GdkRectangle bounds = { safe_left, safe_top,
++                          parent_surface->width - safe_left - safe_right,
++                          parent_surface->height - safe_top - safe_bottom };
 +
 +  memset (&self->popup_bounds, 0, sizeof (GdkRectangle));
 +  gdk_surface_layout_popup_helper (surface, width, height,
 +                                   shadow_left, shadow_right, shadow_top, shadow_bottom,
 +                                   NULL, &bounds, self->layout,
-+                                   GDK_SURFACE_LAYOUT_POPUP_HELPER_ROOT_OUT,
++                                   GDK_SURFACE_LAYOUT_POPUP_HELPER_DEFAULT,
 +                                   &self->popup_bounds);
 +
 +  g_debug ("iOS popup present %p: %dx%d at (%d|%d)", self,
@@ -1138,10 +1295,10 @@ index 0000000..e9f1c6a
 +G_END_DECLS
 diff --git a/gdk/ios/gdkiosruntime-private.h b/gdk/ios/gdkiosruntime-private.h
 new file mode 100644
-index 0000000..930f8ef
+index 0000000..45a4677
 --- /dev/null
 +++ b/gdk/ios/gdkiosruntime-private.h
-@@ -0,0 +1,31 @@
+@@ -0,0 +1,33 @@
 +#pragma once
 +
 +#include "gdkiosruntime.h"
@@ -1162,6 +1319,8 @@ index 0000000..930f8ef
 +
 +@interface GdkIosRootView : UIView
 +@property (nonatomic, assign) UIView *grabbedView;
++@property (nonatomic, assign) CGFloat keyboardTop;   /* 0: no keyboard */
++@property (nonatomic, strong) UIView *bottomStrip;
 +@end
 +
 +GdkIosRootView *gdk_ios_runtime_get_root_view (void);
@@ -1175,10 +1334,10 @@ index 0000000..930f8ef
 +G_END_DECLS
 diff --git a/gdk/ios/gdkiosruntime.c b/gdk/ios/gdkiosruntime.c
 new file mode 100644
-index 0000000..37ef5bb
+index 0000000..6c26170
 --- /dev/null
 +++ b/gdk/ios/gdkiosruntime.c
-@@ -0,0 +1,251 @@
+@@ -0,0 +1,455 @@
 +/*
 + * GDK iOS backend: UIKit application shell and the GTK thread.
 + *
@@ -1199,6 +1358,7 @@ index 0000000..37ef5bb
 +#include "gdkiosdisplay-private.h"
 +#include "gdkiossurface-private.h"
 +#include "gdkiosevents-private.h"
++#include "gdkiostextinput-private.h"
 +
 +static GdkIosMainFunc gdk_ios_app_main = NULL;
 +static int gdk_ios_argc = 0;
@@ -1209,14 +1369,67 @@ index 0000000..37ef5bb
 +static GThread *gdk_ios_gtk_thread = NULL;
 +static volatile gint gdk_ios_ready = 0;
 +
++static guint32 gdk_ios_bars_top = 0xffffffff;
++static guint32 gdk_ios_bars_bottom = 0xffffffff;
++
++static UIColor *
++gdk_ios_color_from_argb (guint32 argb)
++{
++  return [UIColor colorWithRed:((argb >> 16) & 0xff) / 255.0
++                         green:((argb >> 8) & 0xff) / 255.0
++                          blue:(argb & 0xff) / 255.0
++                         alpha:((argb >> 24) & 0xff) / 255.0];
++}
++
 +@implementation GdkIosRootView
++
++/*
++ * Toplevel surfaces fill the whole window (edge to edge, under the
++ * status bar / home indicator / notch), shrinking only above the
++ * on-screen keyboard. The application pads its bars by the safe area,
++ * so their backgrounds and shadows reach the screen edges.
++ */
++- (void)layoutSubviews
++{
++  [super layoutSubviews];
++  CGRect frame = self.bounds;
++  if (self.keyboardTop > 0 && self.keyboardTop < CGRectGetMaxY (self.bounds))
++    frame.size.height = MAX (self.keyboardTop, 1);
++  for (UIView *child in self.subviews)
++    {
++      if ([child isKindOfClass:[GdkIosSurfaceView class]] && ((GdkIosSurfaceView *) child).gdkIsToplevel)
++        {
++          if (!CGRectEqualToRect (child.frame, frame))
++            child.frame = frame;
++        }
++    }
++  if (self.bottomStrip == nil)
++    {
++      self.bottomStrip = [[UIView alloc] initWithFrame:CGRectZero];
++      self.bottomStrip.userInteractionEnabled = NO;
++      [self insertSubview:self.bottomStrip atIndex:0];
++    }
++  self.bottomStrip.backgroundColor = gdk_ios_color_from_argb (gdk_ios_bars_bottom);
++  self.backgroundColor = gdk_ios_color_from_argb (gdk_ios_bars_top);
++}
++
++- (void)safeAreaInsetsDidChange
++{
++  [super safeAreaInsetsDidChange];
++  [self setNeedsLayout];
++}
 +
 +- (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event
 +{
-+  /* A GDK grab (autohide popups) routes every touch to the grabbed
-+   * surface, even outside it, which is how GTK learns to close menus. */
++  /* A GDK grab (autohide popups) owns touches inside the popup. Touches
++   * outside must reach the surface below, so GTK's autohide check sees a
++   * different event surface and dismisses the popup. */
 +  if (self.grabbedView != nil && !self.grabbedView.hidden && self.grabbedView.superview != nil)
-+    return self.grabbedView;
++    {
++      CGPoint in_grab = [self convertPoint:point toView:self.grabbedView];
++      if ([self.grabbedView pointInside:in_grab withEvent:event])
++        return self.grabbedView;
++    }
 +  return [super hitTest:point withEvent:event];
 +}
 +
@@ -1243,7 +1456,40 @@ index 0000000..37ef5bb
 +
 +- (UIStatusBarStyle)preferredStatusBarStyle
 +{
-+  return UIStatusBarStyleDefault;
++  /* light text over a dark top bar */
++  double r = ((gdk_ios_bars_top >> 16) & 0xff) / 255.0;
++  double g = ((gdk_ios_bars_top >> 8) & 0xff) / 255.0;
++  double b = (gdk_ios_bars_top & 0xff) / 255.0;
++  return (0.299 * r + 0.587 * g + 0.114 * b) < 0.5 ? UIStatusBarStyleLightContent : UIStatusBarStyleDarkContent;
++}
++
++- (void)viewDidLoad
++{
++  [super viewDidLoad];
++  NSNotificationCenter *center = [NSNotificationCenter defaultCenter];
++  [center addObserver:self selector:@selector(keyboardWillChange:) name:UIKeyboardWillChangeFrameNotification object:nil];
++  [center addObserver:self selector:@selector(keyboardWillHide:) name:UIKeyboardWillHideNotification object:nil];
++}
++
++- (void)keyboardWillChange:(NSNotification *)note
++{
++  GdkIosRootView *root = (GdkIosRootView *) self.view;
++  CGRect end = [note.userInfo[UIKeyboardFrameEndUserInfoKey] CGRectValue];
++  CGRect local = [root convertRect:end fromView:nil];
++  CGFloat top = CGRectIntersectsRect (local, root.bounds) ? CGRectGetMinY (local) : 0;
++  if (top >= CGRectGetMaxY (root.bounds))
++    top = 0;
++  root.keyboardTop = top;
++  [root setNeedsLayout];
++  [root layoutIfNeeded];
++}
++
++- (void)keyboardWillHide:(NSNotification *)note
++{
++  GdkIosRootView *root = (GdkIosRootView *) self.view;
++  root.keyboardTop = 0;
++  [root setNeedsLayout];
++  [root layoutIfNeeded];
 +}
 +
 +- (void)traitCollectionDidChange:(UITraitCollection *)previous
@@ -1267,7 +1513,7 @@ index 0000000..37ef5bb
 +}
 +
 +static void
-+gdk_ios_runtime_debug_tap (double x, double y)
++gdk_ios_runtime_debug_tap (double x, double y, double hold_ms)
 +{
 +  GdkIosRootView *root = gdk_ios_runtime_get_root_view ();
 +  UIView *hit = [root hitTest:CGPointMake (x, y) withEvent:nil];
@@ -1282,12 +1528,49 @@ index 0000000..37ef5bb
 +  CGPoint local = [root convertPoint:CGPointMake (x, y) toView:view];
 +  guint sequence = (guint) g_random_int ();
 +  guint32 now = (guint32) (g_get_monotonic_time () / 1000);
-+  NSLog (@"debug tap at %.0f,%.0f -> surface %p local %.0f,%.0f", x, y, view.gdkSurface, local.x, local.y);
++  NSLog (@"debug tap at %.0f,%.0f hold %.0f -> surface %p local %.0f,%.0f", x, y, hold_ms, view.gdkSurface, local.x, local.y);
 +  gdk_ios_events_post_touch (view.gdkSurface, GDK_TOUCH_BEGIN, sequence, local.x, local.y, now);
 +  GdkIosSurface *surface = view.gdkSurface;
-+  dispatch_after (dispatch_time (DISPATCH_TIME_NOW, 80 * NSEC_PER_MSEC), dispatch_get_main_queue (), ^{
++  dispatch_after (dispatch_time (DISPATCH_TIME_NOW, (int64_t) (hold_ms * NSEC_PER_MSEC)), dispatch_get_main_queue (), ^{
 +    if (view.gdkSurface == surface)
-+      gdk_ios_events_post_touch (surface, GDK_TOUCH_END, sequence, local.x, local.y, now + 80);
++      gdk_ios_events_post_touch (surface, GDK_TOUCH_END, sequence, local.x, local.y, now + (guint32) hold_ms);
++  });
++}
++
++static void
++gdk_ios_runtime_debug_drag (double x1, double y1, double x2, double y2)
++{
++  GdkIosRootView *root = gdk_ios_runtime_get_root_view ();
++  UIView *hit = [root hitTest:CGPointMake (x1, y1) withEvent:nil];
++  if (![hit isKindOfClass:[GdkIosSurfaceView class]])
++    {
++      NSLog (@"debug drag at %.0f,%.0f hit no surface view (%@)", x1, y1, hit);
++      return;
++    }
++  GdkIosSurfaceView *view = (GdkIosSurfaceView *) hit;
++  if (view.gdkSurface == NULL)
++    return;
++  GdkIosSurface *surface = view.gdkSurface;
++  guint sequence = (guint) g_random_int ();
++  guint32 now = (guint32) (g_get_monotonic_time () / 1000);
++  CGPoint start = [root convertPoint:CGPointMake (x1, y1) toView:view];
++  CGPoint end = [root convertPoint:CGPointMake (x2, y2) toView:view];
++  NSLog (@"debug drag %.0f,%.0f -> %.0f,%.0f on surface %p local %.0f,%.0f -> %.0f,%.0f",
++         x1, y1, x2, y2, surface, start.x, start.y, end.x, end.y);
++  gdk_ios_events_post_touch (surface, GDK_TOUCH_BEGIN, sequence, start.x, start.y, now);
++  for (int i = 1; i <= 4; i++)
++    {
++      double t = i / 4.0;
++      CGPoint p = CGPointMake (start.x + (end.x - start.x) * t,
++                               start.y + (end.y - start.y) * t);
++      dispatch_after (dispatch_time (DISPATCH_TIME_NOW, (int64_t) (i * 20) * NSEC_PER_MSEC), dispatch_get_main_queue (), ^{
++        if (view.gdkSurface == surface)
++          gdk_ios_events_post_touch (surface, GDK_TOUCH_UPDATE, sequence, p.x, p.y, now + (guint32) (i * 20));
++      });
++    }
++  dispatch_after (dispatch_time (DISPATCH_TIME_NOW, 110 * NSEC_PER_MSEC), dispatch_get_main_queue (), ^{
++    if (view.gdkSurface == surface)
++      gdk_ios_events_post_touch (surface, GDK_TOUCH_END, sequence, end.x, end.y, now + 110);
 +  });
 +}
 +
@@ -1312,8 +1595,35 @@ index 0000000..37ef5bb
 +  gdk_ios_runtime_log ("GDK iOS runtime: window up, starting GTK thread");
 +  gdk_ios_gtk_thread = g_thread_new ("GTK Thread", gdk_ios_gtk_thread_func, NULL);
 +
-+  /* GDK_IOS_DEBUG_TAPS="x,y,ms;x,y,ms": synthesize taps (in points) for
-+   * automated checks in the simulator, where nothing can inject touches. */
++  /* GDK_IOS_DEBUG_TYPE="ms:text": type text on the on-screen keyboard
++   * responder after ms milliseconds ("\n" for return, "\b" for backspace). */
++  const char *type_spec = g_getenv ("GDK_IOS_DEBUG_TYPE");
++  if (type_spec != NULL && strchr (type_spec, ':') != NULL)
++    {
++      int ms = atoi (type_spec);
++      char *text = g_strdup (strchr (type_spec, ':') + 1);
++      dispatch_after (dispatch_time (DISPATCH_TIME_NOW, (int64_t) ms * NSEC_PER_MSEC), dispatch_get_main_queue (), ^{
++        UIView<UIKeyInput> *input = (UIView<UIKeyInput> *) gdk_ios_text_input_get_view ();
++        NSLog (@"debug type: first responder %d", input.isFirstResponder);
++        for (const char *p = text; *p != '\0'; p = g_utf8_next_char (p))
++          {
++            gunichar ch = g_utf8_get_char (p);
++            if (ch == '\b')
++              [input deleteBackward];
++            else
++              {
++                char buf[8] = { 0 };
++                g_unichar_to_utf8 (ch, buf);
++                [input insertText:[NSString stringWithUTF8String:buf]];
++              }
++          }
++        g_free (text);
++      });
++    }
++
++  /* GDK_IOS_DEBUG_TAPS="x,y,ms;x,y,ms" (optional 4th field: hold ms):
++   * synthesize taps (in points) for automated checks in the simulator,
++   * where nothing can inject touches. */
 +  const char *taps = g_getenv ("GDK_IOS_DEBUG_TAPS");
 +  if (taps != NULL)
 +    {
@@ -1322,10 +1632,30 @@ index 0000000..37ef5bb
 +        {
 +          double x = 0, y = 0;
 +          int ms = 1000;
-+          if (sscanf (list[i], "%lf,%lf,%d", &x, &y, &ms) < 2)
++          int hold = 80;
++          if (sscanf (list[i], "%lf,%lf,%d,%d", &x, &y, &ms, &hold) < 2)
 +            continue;
 +          dispatch_after (dispatch_time (DISPATCH_TIME_NOW, (int64_t) ms * NSEC_PER_MSEC), dispatch_get_main_queue (), ^{
-+            gdk_ios_runtime_debug_tap (x, y);
++            gdk_ios_runtime_debug_tap (x, y, hold);
++          });
++        }
++      g_strfreev (list);
++    }
++
++  /* GDK_IOS_DEBUG_DRAGS="x1,y1,x2,y2,ms;…": synthesize a touch drag (in
++   * points) after ms, for scrolling checks without hands. */
++  const char *drags = g_getenv ("GDK_IOS_DEBUG_DRAGS");
++  if (drags != NULL)
++    {
++      char **list = g_strsplit (drags, ";", -1);
++      for (int i = 0; list[i] != NULL; i++)
++        {
++          double x1 = 0, y1 = 0, x2 = 0, y2 = 0;
++          int ms = 1000;
++          if (sscanf (list[i], "%lf,%lf,%lf,%lf,%d", &x1, &y1, &x2, &y2, &ms) < 4)
++            continue;
++          dispatch_after (dispatch_time (DISPATCH_TIME_NOW, (int64_t) ms * NSEC_PER_MSEC), dispatch_get_main_queue (), ^{
++            gdk_ios_runtime_debug_drag (x1, y1, x2, y2);
 +          });
 +        }
 +      g_strfreev (list);
@@ -1384,6 +1714,39 @@ index 0000000..37ef5bb
 +  }
 +}
 +
++void
++gdk_ios_set_bars_colors (guint32 top_argb, guint32 bottom_argb)
++{
++  gdk_ios_bars_top = top_argb;
++  gdk_ios_bars_bottom = bottom_argb;
++  gdk_ios_run_on_main_async (^{
++    GdkIosRootView *root = gdk_ios_runtime_get_root_view ();
++    [root setNeedsLayout];
++    [gdk_ios_window.rootViewController setNeedsStatusBarAppearanceUpdate];
++  });
++}
++
++void
++gdk_ios_get_safe_area (int *top, int *bottom, int *left, int *right)
++{
++  __block UIEdgeInsets insets = UIEdgeInsetsZero;
++
++  gdk_ios_run_on_main_sync (^{
++    GdkIosRootView *root = gdk_ios_runtime_get_root_view ();
++    if (root != nil)
++      insets = root.safeAreaInsets;
++  });
++
++  if (top != NULL)
++    *top = (int) ceil (insets.top);
++  if (bottom != NULL)
++    *bottom = (int) ceil (insets.bottom);
++  if (left != NULL)
++    *left = (int) ceil (insets.left);
++  if (right != NULL)
++    *right = (int) ceil (insets.right);
++}
++
 +gboolean
 +gdk_ios_runtime_is_ready (void)
 +{
@@ -1432,10 +1795,10 @@ index 0000000..37ef5bb
 +}
 diff --git a/gdk/ios/gdkiosruntime.h b/gdk/ios/gdkiosruntime.h
 new file mode 100644
-index 0000000..9c40f6d
+index 0000000..4ae9666
 --- /dev/null
 +++ b/gdk/ios/gdkiosruntime.h
-@@ -0,0 +1,23 @@
+@@ -0,0 +1,42 @@
 +#pragma once
 +
 +#include <gdk/gdk.h>
@@ -1457,6 +1820,25 @@ index 0000000..9c40f6d
 + */
 +GDK_AVAILABLE_IN_ALL
 +int gdk_ios_main (int argc, char **argv, GdkIosMainFunc app_main);
++
++/**
++ * gdk_ios_set_bars_colors:
++ *
++ * Colours (0xAARRGGBB) painted under the status bar and the home
++ * indicator, where the toplevel does not reach. Any thread.
++ */
++GDK_AVAILABLE_IN_ALL
++void gdk_ios_set_bars_colors (guint32 top_argb, guint32 bottom_argb);
++
++/**
++ * gdk_ios_get_safe_area:
++ *
++ * The window's safe-area insets in points (status bar, home indicator,
++ * notch). Toplevels fill the whole window, so the application pads its
++ * bars by these. Any thread.
++ */
++GDK_AVAILABLE_IN_ALL
++void gdk_ios_get_safe_area (int *top, int *bottom, int *left, int *right);
 +
 +G_END_DECLS
 diff --git a/gdk/ios/gdkiosseat-private.h b/gdk/ios/gdkiosseat-private.h
@@ -1935,10 +2317,10 @@ index 0000000..ae80bd3
 +G_END_DECLS
 diff --git a/gdk/ios/gdkiossurface-private.h b/gdk/ios/gdkiossurface-private.h
 new file mode 100644
-index 0000000..79c214c
+index 0000000..3890702
 --- /dev/null
 +++ b/gdk/ios/gdkiossurface-private.h
-@@ -0,0 +1,63 @@
+@@ -0,0 +1,64 @@
 +#pragma once
 +
 +#include "gdksurfaceprivate.h"
@@ -1998,16 +2380,17 @@ index 0000000..79c214c
 +
 +@interface GdkIosSurfaceView : UIView
 +@property (nonatomic, assign) GdkIosSurface *gdkSurface;
++@property (nonatomic, assign) BOOL gdkIsToplevel;
 +@end
 +#endif
 +
 +G_END_DECLS
 diff --git a/gdk/ios/gdkiossurface.c b/gdk/ios/gdkiossurface.c
 new file mode 100644
-index 0000000..d7e65fa
+index 0000000..9af8ca7
 --- /dev/null
 +++ b/gdk/ios/gdkiossurface.c
-@@ -0,0 +1,396 @@
+@@ -0,0 +1,399 @@
 +/* GDK iOS backend: GdkSurface backed by a UIView. SPDX-License-Identifier: LGPL-2.1-or-later */
 +
 +#include "config.h"
@@ -2206,14 +2589,17 @@ index 0000000..d7e65fa
 +      }
 +    if (frame_points == NULL)
 +      {
-+        view.frame = container.bounds;
-+        view.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
++        /* the root view lays toplevels out: safe area minus keyboard */
++        view.gdkIsToplevel = YES;
++        [container setNeedsLayout];
++        [container layoutIfNeeded];
 +      }
 +    else
 +      {
++        view.gdkIsToplevel = NO;
 +        view.frame = CGRectMake (frame.x, frame.y, frame.width, frame.height);
-+        view.autoresizingMask = UIViewAutoresizingNone;
 +      }
++    view.autoresizingMask = UIViewAutoresizingNone;
 +    [container bringSubviewToFront:view];
 +    view.hidden = NO;
 +    CGRect f = view.frame;
@@ -2429,6 +2815,224 @@ index 0000000..697d576
 +GType gdk_ios_surface_get_type (void);
 +
 +G_END_DECLS
+diff --git a/gdk/ios/gdkiostextinput-private.h b/gdk/ios/gdkiostextinput-private.h
+new file mode 100644
+index 0000000..689b718
+--- /dev/null
++++ b/gdk/ios/gdkiostextinput-private.h
+@@ -0,0 +1,42 @@
++#pragma once
++
++#include <gdk/gdk.h>
++
++G_BEGIN_DECLS
++
++/*
++ * The on-screen keyboard. One hidden UIView that is the first responder
++ * while a GTK text widget has focus; what the user types is queued to the
++ * GTK thread and handed to the active handlers.
++ */
++
++typedef struct
++{
++  void (*insert) (const char *text, gpointer user_data);
++  void (*delete_backward) (gpointer user_data);
++  void (*enter) (gpointer user_data);
++} GdkIosTextInputHandlers;
++
++/* GTK thread. @handlers/@user_data stay active until the next call. */
++void gdk_ios_text_input_set_handlers (const GdkIosTextInputHandlers *handlers, gpointer user_data);
++
++typedef enum
++{
++  GDK_IOS_KEYBOARD_DEFAULT,
++  GDK_IOS_KEYBOARD_NUMBER,
++  GDK_IOS_KEYBOARD_DECIMAL,
++  GDK_IOS_KEYBOARD_PHONE,
++  GDK_IOS_KEYBOARD_URL,
++  GDK_IOS_KEYBOARD_EMAIL,
++} GdkIosKeyboardType;
++
++/* Any thread: show the keyboard with these traits / hide it. */
++void gdk_ios_text_input_show (GdkIosKeyboardType type, gboolean secure, gboolean autocorrect);
++void gdk_ios_text_input_hide (void);
++
++#ifdef __OBJC__
++#import <UIKit/UIKit.h>
++UIView *gdk_ios_text_input_get_view (void);
++#endif
++
++G_END_DECLS
+diff --git a/gdk/ios/gdkiostextinput.c b/gdk/ios/gdkiostextinput.c
+new file mode 100644
+index 0000000..b400cd0
+--- /dev/null
++++ b/gdk/ios/gdkiostextinput.c
+@@ -0,0 +1,164 @@
++/* GDK iOS backend: the on-screen keyboard. SPDX-License-Identifier: LGPL-2.1-or-later */
++
++#include "config.h"
++
++#import <UIKit/UIKit.h>
++
++#include "gdkiosruntime-private.h"
++
++#include "gdkiostextinput-private.h"
++
++static GdkIosTextInputHandlers gdk_ios_handlers = { 0 };
++static gpointer gdk_ios_handlers_data = NULL;
++
++/* ── GTK thread side ────────────────────────────────────────────────── */
++
++void
++gdk_ios_text_input_set_handlers (const GdkIosTextInputHandlers *handlers, gpointer user_data)
++{
++  if (handlers != NULL)
++    gdk_ios_handlers = *handlers;
++  else
++    memset (&gdk_ios_handlers, 0, sizeof gdk_ios_handlers);
++  gdk_ios_handlers_data = user_data;
++}
++
++static gboolean
++insert_idle (gpointer data)
++{
++  if (gdk_ios_handlers.insert != NULL)
++    gdk_ios_handlers.insert ((const char *) data, gdk_ios_handlers_data);
++  return G_SOURCE_REMOVE;
++}
++
++static gboolean
++delete_idle (gpointer data)
++{
++  if (gdk_ios_handlers.delete_backward != NULL)
++    gdk_ios_handlers.delete_backward (gdk_ios_handlers_data);
++  return G_SOURCE_REMOVE;
++}
++
++static gboolean
++enter_idle (gpointer data)
++{
++  if (gdk_ios_handlers.enter != NULL)
++    gdk_ios_handlers.enter (gdk_ios_handlers_data);
++  return G_SOURCE_REMOVE;
++}
++
++/* ── the responder (main thread) ────────────────────────────────────── */
++
++@interface GdkIosTextInputView : UIView <UIKeyInput>
++@property (nonatomic, assign) UIKeyboardType gdkKeyboardType;
++@property (nonatomic, assign) BOOL gdkSecure;
++@property (nonatomic, assign) UITextAutocorrectionType gdkAutocorrection;
++@end
++
++@implementation GdkIosTextInputView
++
++- (BOOL)canBecomeFirstResponder
++{
++  return YES;
++}
++
++- (BOOL)hasText
++{
++  /* Pretend there is always text so deleteBackward keeps arriving. */
++  return YES;
++}
++
++- (void)insertText:(NSString *)text
++{
++  if ([text isEqualToString:@"\n"])
++    {
++      gdk_ios_post_to_gtk (enter_idle, NULL, NULL);
++      return;
++    }
++  gdk_ios_post_to_gtk (insert_idle, g_strdup (text.UTF8String), g_free);
++}
++
++- (void)deleteBackward
++{
++  gdk_ios_post_to_gtk (delete_idle, NULL, NULL);
++}
++
++- (UIKeyboardType)keyboardType
++{
++  return self.gdkKeyboardType;
++}
++
++- (BOOL)isSecureTextEntry
++{
++  return self.gdkSecure;
++}
++
++- (UITextAutocorrectionType)autocorrectionType
++{
++  return self.gdkAutocorrection;
++}
++
++- (UITextAutocapitalizationType)autocapitalizationType
++{
++  return UITextAutocapitalizationTypeNone;
++}
++
++- (UIReturnKeyType)returnKeyType
++{
++  return UIReturnKeyDefault;
++}
++
++@end
++
++static GdkIosTextInputView *gdk_ios_text_input_view = nil;
++
++UIView *
++gdk_ios_text_input_get_view (void)
++{
++  if (gdk_ios_text_input_view == nil)
++    {
++      gdk_ios_text_input_view = [[GdkIosTextInputView alloc] initWithFrame:CGRectZero];
++      gdk_ios_text_input_view.hidden = YES;
++      [gdk_ios_runtime_get_root_view () addSubview:gdk_ios_text_input_view];
++    }
++  return gdk_ios_text_input_view;
++}
++
++void
++gdk_ios_text_input_show (GdkIosKeyboardType type, gboolean secure, gboolean autocorrect)
++{
++  gdk_ios_run_on_main_async (^{
++    GdkIosTextInputView *view = (GdkIosTextInputView *) gdk_ios_text_input_get_view ();
++    UIKeyboardType kb = UIKeyboardTypeDefault;
++    switch (type)
++      {
++      case GDK_IOS_KEYBOARD_NUMBER: kb = UIKeyboardTypeNumberPad; break;
++      case GDK_IOS_KEYBOARD_DECIMAL: kb = UIKeyboardTypeDecimalPad; break;
++      case GDK_IOS_KEYBOARD_PHONE: kb = UIKeyboardTypePhonePad; break;
++      case GDK_IOS_KEYBOARD_URL: kb = UIKeyboardTypeURL; break;
++      case GDK_IOS_KEYBOARD_EMAIL: kb = UIKeyboardTypeEmailAddress; break;
++      default: break;
++      }
++    BOOL changed = view.gdkKeyboardType != kb || view.gdkSecure != (BOOL) secure ||
++                   view.gdkAutocorrection != (autocorrect ? UITextAutocorrectionTypeDefault : UITextAutocorrectionTypeNo);
++    view.gdkKeyboardType = kb;
++    view.gdkSecure = secure;
++    view.gdkAutocorrection = autocorrect ? UITextAutocorrectionTypeDefault : UITextAutocorrectionTypeNo;
++    if (view.isFirstResponder)
++      {
++        if (changed)
++          [view reloadInputViews];
++      }
++    else
++      [view becomeFirstResponder];
++  });
++}
++
++void
++gdk_ios_text_input_hide (void)
++{
++  gdk_ios_run_on_main_async (^{
++    if (gdk_ios_text_input_view != nil && gdk_ios_text_input_view.isFirstResponder)
++      [gdk_ios_text_input_view resignFirstResponder];
++  });
++}
 diff --git a/gdk/ios/gdkiostoplevel-private.h b/gdk/ios/gdkiostoplevel-private.h
 new file mode 100644
 index 0000000..85d655f
@@ -2720,10 +3324,10 @@ index 0000000..7cdaac2
 +G_END_DECLS
 diff --git a/gdk/ios/meson.build b/gdk/ios/meson.build
 new file mode 100644
-index 0000000..a0f6ffa
+index 0000000..af0ace7
 --- /dev/null
 +++ b/gdk/ios/meson.build
-@@ -0,0 +1,37 @@
+@@ -0,0 +1,39 @@
 +gdk_ios_sources = files([
 +  'gdkiosruntime.c',
 +  'gdkiosdisplay.c',
@@ -2734,6 +3338,8 @@ index 0000000..a0f6ffa
 +  'gdkioscairocontext.c',
 +  'gdkiosseat.c',
 +  'gdkiosevents.c',
++  'gdkiostextinput.c',
++  'gdkiosclipboard.c',
 +])
 +
 +gdk_ios_public_headers = files([
@@ -2804,551 +3410,6 @@ index a924b6c..57bf197 100644
    if (!picker)
      picker = gtk_color_picker_quartz_new ();
  #elif defined (G_OS_WIN32)
-diff --git a/meson.build b/meson.build
-index 49a65a9..11bba40 100644
---- a/meson.build
-+++ b/meson.build
-@@ -118,6 +118,7 @@ broadway_enabled = get_option('broadway-backend')
- macos_enabled    = get_option('macos-backend')
- win32_enabled    = get_option('win32-backend')
- android_enabled  = get_option('android-backend')
-+ios_enabled      = get_option('ios-backend')
- vulkan_enabled   = get_option('vulkan')
- 
- os_unix   = false
-@@ -134,7 +135,10 @@ cc = meson.get_compiler('c')
- # to ensure they are enabled
- if host_machine.system() == 'darwin'
- 
--  if not cc.compiles('''
-+  if host_machine.subsystem() != 'macos'
-+    # iOS and friends: no macOS SDK check, no AppKit-based backend
-+    macos_enabled = false
-+  elif not cc.compiles('''
-     #include <Availability.h>
-     #if __MAC_OS_X_VERSION_MIN_REQUIRED < 101500L
-     # error message "Minimal macOS SDK version not met"
-@@ -160,6 +164,7 @@ if os_darwin
-   x11_enabled = false
- else
-   macos_enabled = false
-+  ios_enabled = false
- endif
- 
- if os_win32
-diff --git a/meson.options b/meson.options
-index cb663bd..b9642aa 100644
---- a/meson.options
-+++ b/meson.options
-@@ -29,6 +29,11 @@ option('macos-backend',
-        value: true,
-        description : 'Enable the macOS gdk backend (only when building on macOS)')
- 
-+option('ios-backend',
-+       type: 'boolean',
-+       value: false,
-+       description : 'Enable the iOS gdk backend (UIKit)')
-+
- option('android-backend',
-        type: 'boolean',
-        value: true,
--- 
-2.54.0
-
-
-From 2f49ca3e88d11d8f45dd9ee7a1a6e4414e1a00bf Mon Sep 17 00:00:00 2001
-From: Anton Palgunov <toxblh@gmail.com>
-Date: Wed, 9 Sep 2026 09:46:04 +0300
-Subject: [PATCH 2/2] gdk/ios: on-screen keyboard, safe area, bar colours
-
-GtkIMContextIos commits what the UIKit keyboard responder types and
-turns backspace/return into key events; toplevels are laid out in the
-safe area minus the keyboard, and the strips under the status bar and
-home indicator take the colours the app sets with
-gdk_ios_set_bars_colors().
----
- gdk/ios/gdkiosruntime-private.h   |   2 +
- gdk/ios/gdkiosruntime.c           | 125 ++++++++++++++++-
- gdk/ios/gdkiosruntime.h           |   9 ++
- gdk/ios/gdkiossurface-private.h   |   1 +
- gdk/ios/gdkiossurface.c           |   9 +-
- gdk/ios/gdkiostextinput-private.h |  42 ++++++
- gdk/ios/gdkiostextinput.c         | 164 ++++++++++++++++++++++
- gdk/ios/meson.build               |   1 +
- gtk/gtkimcontextios.c             | 224 ++++++++++++++++++++++++++++++
- gtk/gtkimcontextiosprivate.h      |  10 ++
- gtk/gtkimmodule.c                 |  14 ++
- gtk/meson.build                   |   6 +
- 12 files changed, 603 insertions(+), 4 deletions(-)
- create mode 100644 gdk/ios/gdkiostextinput-private.h
- create mode 100644 gdk/ios/gdkiostextinput.c
- create mode 100644 gtk/gtkimcontextios.c
- create mode 100644 gtk/gtkimcontextiosprivate.h
-
-diff --git a/gdk/ios/gdkiosruntime-private.h b/gdk/ios/gdkiosruntime-private.h
-index 930f8ef..45a4677 100644
---- a/gdk/ios/gdkiosruntime-private.h
-+++ b/gdk/ios/gdkiosruntime-private.h
-@@ -18,6 +18,8 @@ void gdk_ios_runtime_log (const char *message);
- 
- @interface GdkIosRootView : UIView
- @property (nonatomic, assign) UIView *grabbedView;
-+@property (nonatomic, assign) CGFloat keyboardTop;   /* 0: no keyboard */
-+@property (nonatomic, strong) UIView *bottomStrip;
- @end
- 
- GdkIosRootView *gdk_ios_runtime_get_root_view (void);
-diff --git a/gdk/ios/gdkiosruntime.c b/gdk/ios/gdkiosruntime.c
-index 37ef5bb..b03a0ec 100644
---- a/gdk/ios/gdkiosruntime.c
-+++ b/gdk/ios/gdkiosruntime.c
-@@ -18,6 +18,7 @@
- #include "gdkiosdisplay-private.h"
- #include "gdkiossurface-private.h"
- #include "gdkiosevents-private.h"
-+#include "gdkiostextinput-private.h"
- 
- static GdkIosMainFunc gdk_ios_app_main = NULL;
- static int gdk_ios_argc = 0;
-@@ -28,8 +29,59 @@ static GdkIosRootView *gdk_ios_root_view = nil;
- static GThread *gdk_ios_gtk_thread = NULL;
- static volatile gint gdk_ios_ready = 0;
- 
-+static guint32 gdk_ios_bars_top = 0xffffffff;
-+static guint32 gdk_ios_bars_bottom = 0xffffffff;
-+
-+static UIColor *
-+gdk_ios_color_from_argb (guint32 argb)
-+{
-+  return [UIColor colorWithRed:((argb >> 16) & 0xff) / 255.0
-+                         green:((argb >> 8) & 0xff) / 255.0
-+                          blue:(argb & 0xff) / 255.0
-+                         alpha:((argb >> 24) & 0xff) / 255.0];
-+}
-+
- @implementation GdkIosRootView
- 
-+/*
-+ * Toplevel surfaces fill the safe area, minus whatever the on-screen
-+ * keyboard covers; the strips above and below show the bar colours the
-+ * application asked for (status bar and home indicator areas).
-+ */
-+- (void)layoutSubviews
-+{
-+  [super layoutSubviews];
-+  CGRect safe = self.safeAreaLayoutGuide.layoutFrame;
-+  CGFloat bottom = CGRectGetMaxY (safe);
-+  if (self.keyboardTop > 0 && self.keyboardTop < bottom)
-+    bottom = self.keyboardTop;
-+  CGRect frame = CGRectMake (safe.origin.x, safe.origin.y, safe.size.width, MAX (bottom - safe.origin.y, 1));
-+  for (UIView *child in self.subviews)
-+    {
-+      if ([child isKindOfClass:[GdkIosSurfaceView class]] && ((GdkIosSurfaceView *) child).gdkIsToplevel)
-+        {
-+          if (!CGRectEqualToRect (child.frame, frame))
-+            child.frame = frame;
-+        }
-+    }
-+  if (self.bottomStrip == nil)
-+    {
-+      self.bottomStrip = [[UIView alloc] initWithFrame:CGRectZero];
-+      self.bottomStrip.userInteractionEnabled = NO;
-+      [self insertSubview:self.bottomStrip atIndex:0];
-+    }
-+  self.bottomStrip.frame = CGRectMake (0, CGRectGetMaxY (safe), self.bounds.size.width,
-+                                       self.bounds.size.height - CGRectGetMaxY (safe));
-+  self.bottomStrip.backgroundColor = gdk_ios_color_from_argb (gdk_ios_bars_bottom);
-+  self.backgroundColor = gdk_ios_color_from_argb (gdk_ios_bars_top);
-+}
-+
-+- (void)safeAreaInsetsDidChange
-+{
-+  [super safeAreaInsetsDidChange];
-+  [self setNeedsLayout];
-+}
-+
- - (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event
- {
-   /* A GDK grab (autohide popups) routes every touch to the grabbed
-@@ -62,7 +114,40 @@ gdk_ios_runtime_dark_idle (gpointer data)
- 
- - (UIStatusBarStyle)preferredStatusBarStyle
- {
--  return UIStatusBarStyleDefault;
-+  /* light text over a dark top bar */
-+  double r = ((gdk_ios_bars_top >> 16) & 0xff) / 255.0;
-+  double g = ((gdk_ios_bars_top >> 8) & 0xff) / 255.0;
-+  double b = (gdk_ios_bars_top & 0xff) / 255.0;
-+  return (0.299 * r + 0.587 * g + 0.114 * b) < 0.5 ? UIStatusBarStyleLightContent : UIStatusBarStyleDarkContent;
-+}
-+
-+- (void)viewDidLoad
-+{
-+  [super viewDidLoad];
-+  NSNotificationCenter *center = [NSNotificationCenter defaultCenter];
-+  [center addObserver:self selector:@selector(keyboardWillChange:) name:UIKeyboardWillChangeFrameNotification object:nil];
-+  [center addObserver:self selector:@selector(keyboardWillHide:) name:UIKeyboardWillHideNotification object:nil];
-+}
-+
-+- (void)keyboardWillChange:(NSNotification *)note
-+{
-+  GdkIosRootView *root = (GdkIosRootView *) self.view;
-+  CGRect end = [note.userInfo[UIKeyboardFrameEndUserInfoKey] CGRectValue];
-+  CGRect local = [root convertRect:end fromView:nil];
-+  CGFloat top = CGRectIntersectsRect (local, root.bounds) ? CGRectGetMinY (local) : 0;
-+  if (top >= CGRectGetMaxY (root.bounds))
-+    top = 0;
-+  root.keyboardTop = top;
-+  [root setNeedsLayout];
-+  [root layoutIfNeeded];
-+}
-+
-+- (void)keyboardWillHide:(NSNotification *)note
-+{
-+  GdkIosRootView *root = (GdkIosRootView *) self.view;
-+  root.keyboardTop = 0;
-+  [root setNeedsLayout];
-+  [root layoutIfNeeded];
- }
- 
- - (void)traitCollectionDidChange:(UITraitCollection *)previous
-@@ -131,6 +216,32 @@ gdk_ios_runtime_debug_tap (double x, double y)
-   gdk_ios_runtime_log ("GDK iOS runtime: window up, starting GTK thread");
-   gdk_ios_gtk_thread = g_thread_new ("GTK Thread", gdk_ios_gtk_thread_func, NULL);
- 
-+  /* GDK_IOS_DEBUG_TYPE="ms:text": type text on the on-screen keyboard
-+   * responder after ms milliseconds ("\n" for return, "\b" for backspace). */
-+  const char *type_spec = g_getenv ("GDK_IOS_DEBUG_TYPE");
-+  if (type_spec != NULL && strchr (type_spec, ':') != NULL)
-+    {
-+      int ms = atoi (type_spec);
-+      char *text = g_strdup (strchr (type_spec, ':') + 1);
-+      dispatch_after (dispatch_time (DISPATCH_TIME_NOW, (int64_t) ms * NSEC_PER_MSEC), dispatch_get_main_queue (), ^{
-+        UIView<UIKeyInput> *input = (UIView<UIKeyInput> *) gdk_ios_text_input_get_view ();
-+        NSLog (@"debug type: first responder %d", input.isFirstResponder);
-+        for (const char *p = text; *p != '\0'; p = g_utf8_next_char (p))
-+          {
-+            gunichar ch = g_utf8_get_char (p);
-+            if (ch == '\b')
-+              [input deleteBackward];
-+            else
-+              {
-+                char buf[8] = { 0 };
-+                g_unichar_to_utf8 (ch, buf);
-+                [input insertText:[NSString stringWithUTF8String:buf]];
-+              }
-+          }
-+        g_free (text);
-+      });
-+    }
-+
-   /* GDK_IOS_DEBUG_TAPS="x,y,ms;x,y,ms": synthesize taps (in points) for
-    * automated checks in the simulator, where nothing can inject touches. */
-   const char *taps = g_getenv ("GDK_IOS_DEBUG_TAPS");
-@@ -203,6 +314,18 @@ gdk_ios_main (int argc, char **argv, GdkIosMainFunc app_main)
-   }
- }
- 
-+void
-+gdk_ios_set_bars_colors (guint32 top_argb, guint32 bottom_argb)
-+{
-+  gdk_ios_bars_top = top_argb;
-+  gdk_ios_bars_bottom = bottom_argb;
-+  gdk_ios_run_on_main_async (^{
-+    GdkIosRootView *root = gdk_ios_runtime_get_root_view ();
-+    [root setNeedsLayout];
-+    [gdk_ios_window.rootViewController setNeedsStatusBarAppearanceUpdate];
-+  });
-+}
-+
- gboolean
- gdk_ios_runtime_is_ready (void)
- {
-diff --git a/gdk/ios/gdkiosruntime.h b/gdk/ios/gdkiosruntime.h
-index 9c40f6d..5d40d2c 100644
---- a/gdk/ios/gdkiosruntime.h
-+++ b/gdk/ios/gdkiosruntime.h
-@@ -20,4 +20,13 @@ typedef int (*GdkIosMainFunc) (int argc, char **argv);
- GDK_AVAILABLE_IN_ALL
- int gdk_ios_main (int argc, char **argv, GdkIosMainFunc app_main);
- 
-+/**
-+ * gdk_ios_set_bars_colors:
-+ *
-+ * Colours (0xAARRGGBB) painted under the status bar and the home
-+ * indicator, where the toplevel does not reach. Any thread.
-+ */
-+GDK_AVAILABLE_IN_ALL
-+void gdk_ios_set_bars_colors (guint32 top_argb, guint32 bottom_argb);
-+
- G_END_DECLS
-diff --git a/gdk/ios/gdkiossurface-private.h b/gdk/ios/gdkiossurface-private.h
-index 79c214c..3890702 100644
---- a/gdk/ios/gdkiossurface-private.h
-+++ b/gdk/ios/gdkiossurface-private.h
-@@ -57,6 +57,7 @@ void gdk_ios_surface_handle_map (GdkIosSurface *self);
- 
- @interface GdkIosSurfaceView : UIView
- @property (nonatomic, assign) GdkIosSurface *gdkSurface;
-+@property (nonatomic, assign) BOOL gdkIsToplevel;
- @end
- #endif
- 
-diff --git a/gdk/ios/gdkiossurface.c b/gdk/ios/gdkiossurface.c
-index d7e65fa..9af8ca7 100644
---- a/gdk/ios/gdkiossurface.c
-+++ b/gdk/ios/gdkiossurface.c
-@@ -196,14 +196,17 @@ gdk_ios_surface_attach (GdkIosSurface *self, GdkIosSurface *parent, const GdkRec
-       }
-     if (frame_points == NULL)
-       {
--        view.frame = container.bounds;
--        view.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-+        /* the root view lays toplevels out: safe area minus keyboard */
-+        view.gdkIsToplevel = YES;
-+        [container setNeedsLayout];
-+        [container layoutIfNeeded];
-       }
-     else
-       {
-+        view.gdkIsToplevel = NO;
-         view.frame = CGRectMake (frame.x, frame.y, frame.width, frame.height);
--        view.autoresizingMask = UIViewAutoresizingNone;
-       }
-+    view.autoresizingMask = UIViewAutoresizingNone;
-     [container bringSubviewToFront:view];
-     view.hidden = NO;
-     CGRect f = view.frame;
-diff --git a/gdk/ios/gdkiostextinput-private.h b/gdk/ios/gdkiostextinput-private.h
-new file mode 100644
-index 0000000..689b718
---- /dev/null
-+++ b/gdk/ios/gdkiostextinput-private.h
-@@ -0,0 +1,42 @@
-+#pragma once
-+
-+#include <gdk/gdk.h>
-+
-+G_BEGIN_DECLS
-+
-+/*
-+ * The on-screen keyboard. One hidden UIView that is the first responder
-+ * while a GTK text widget has focus; what the user types is queued to the
-+ * GTK thread and handed to the active handlers.
-+ */
-+
-+typedef struct
-+{
-+  void (*insert) (const char *text, gpointer user_data);
-+  void (*delete_backward) (gpointer user_data);
-+  void (*enter) (gpointer user_data);
-+} GdkIosTextInputHandlers;
-+
-+/* GTK thread. @handlers/@user_data stay active until the next call. */
-+void gdk_ios_text_input_set_handlers (const GdkIosTextInputHandlers *handlers, gpointer user_data);
-+
-+typedef enum
-+{
-+  GDK_IOS_KEYBOARD_DEFAULT,
-+  GDK_IOS_KEYBOARD_NUMBER,
-+  GDK_IOS_KEYBOARD_DECIMAL,
-+  GDK_IOS_KEYBOARD_PHONE,
-+  GDK_IOS_KEYBOARD_URL,
-+  GDK_IOS_KEYBOARD_EMAIL,
-+} GdkIosKeyboardType;
-+
-+/* Any thread: show the keyboard with these traits / hide it. */
-+void gdk_ios_text_input_show (GdkIosKeyboardType type, gboolean secure, gboolean autocorrect);
-+void gdk_ios_text_input_hide (void);
-+
-+#ifdef __OBJC__
-+#import <UIKit/UIKit.h>
-+UIView *gdk_ios_text_input_get_view (void);
-+#endif
-+
-+G_END_DECLS
-diff --git a/gdk/ios/gdkiostextinput.c b/gdk/ios/gdkiostextinput.c
-new file mode 100644
-index 0000000..b400cd0
---- /dev/null
-+++ b/gdk/ios/gdkiostextinput.c
-@@ -0,0 +1,164 @@
-+/* GDK iOS backend: the on-screen keyboard. SPDX-License-Identifier: LGPL-2.1-or-later */
-+
-+#include "config.h"
-+
-+#import <UIKit/UIKit.h>
-+
-+#include "gdkiosruntime-private.h"
-+
-+#include "gdkiostextinput-private.h"
-+
-+static GdkIosTextInputHandlers gdk_ios_handlers = { 0 };
-+static gpointer gdk_ios_handlers_data = NULL;
-+
-+/* ── GTK thread side ────────────────────────────────────────────────── */
-+
-+void
-+gdk_ios_text_input_set_handlers (const GdkIosTextInputHandlers *handlers, gpointer user_data)
-+{
-+  if (handlers != NULL)
-+    gdk_ios_handlers = *handlers;
-+  else
-+    memset (&gdk_ios_handlers, 0, sizeof gdk_ios_handlers);
-+  gdk_ios_handlers_data = user_data;
-+}
-+
-+static gboolean
-+insert_idle (gpointer data)
-+{
-+  if (gdk_ios_handlers.insert != NULL)
-+    gdk_ios_handlers.insert ((const char *) data, gdk_ios_handlers_data);
-+  return G_SOURCE_REMOVE;
-+}
-+
-+static gboolean
-+delete_idle (gpointer data)
-+{
-+  if (gdk_ios_handlers.delete_backward != NULL)
-+    gdk_ios_handlers.delete_backward (gdk_ios_handlers_data);
-+  return G_SOURCE_REMOVE;
-+}
-+
-+static gboolean
-+enter_idle (gpointer data)
-+{
-+  if (gdk_ios_handlers.enter != NULL)
-+    gdk_ios_handlers.enter (gdk_ios_handlers_data);
-+  return G_SOURCE_REMOVE;
-+}
-+
-+/* ── the responder (main thread) ────────────────────────────────────── */
-+
-+@interface GdkIosTextInputView : UIView <UIKeyInput>
-+@property (nonatomic, assign) UIKeyboardType gdkKeyboardType;
-+@property (nonatomic, assign) BOOL gdkSecure;
-+@property (nonatomic, assign) UITextAutocorrectionType gdkAutocorrection;
-+@end
-+
-+@implementation GdkIosTextInputView
-+
-+- (BOOL)canBecomeFirstResponder
-+{
-+  return YES;
-+}
-+
-+- (BOOL)hasText
-+{
-+  /* Pretend there is always text so deleteBackward keeps arriving. */
-+  return YES;
-+}
-+
-+- (void)insertText:(NSString *)text
-+{
-+  if ([text isEqualToString:@"\n"])
-+    {
-+      gdk_ios_post_to_gtk (enter_idle, NULL, NULL);
-+      return;
-+    }
-+  gdk_ios_post_to_gtk (insert_idle, g_strdup (text.UTF8String), g_free);
-+}
-+
-+- (void)deleteBackward
-+{
-+  gdk_ios_post_to_gtk (delete_idle, NULL, NULL);
-+}
-+
-+- (UIKeyboardType)keyboardType
-+{
-+  return self.gdkKeyboardType;
-+}
-+
-+- (BOOL)isSecureTextEntry
-+{
-+  return self.gdkSecure;
-+}
-+
-+- (UITextAutocorrectionType)autocorrectionType
-+{
-+  return self.gdkAutocorrection;
-+}
-+
-+- (UITextAutocapitalizationType)autocapitalizationType
-+{
-+  return UITextAutocapitalizationTypeNone;
-+}
-+
-+- (UIReturnKeyType)returnKeyType
-+{
-+  return UIReturnKeyDefault;
-+}
-+
-+@end
-+
-+static GdkIosTextInputView *gdk_ios_text_input_view = nil;
-+
-+UIView *
-+gdk_ios_text_input_get_view (void)
-+{
-+  if (gdk_ios_text_input_view == nil)
-+    {
-+      gdk_ios_text_input_view = [[GdkIosTextInputView alloc] initWithFrame:CGRectZero];
-+      gdk_ios_text_input_view.hidden = YES;
-+      [gdk_ios_runtime_get_root_view () addSubview:gdk_ios_text_input_view];
-+    }
-+  return gdk_ios_text_input_view;
-+}
-+
-+void
-+gdk_ios_text_input_show (GdkIosKeyboardType type, gboolean secure, gboolean autocorrect)
-+{
-+  gdk_ios_run_on_main_async (^{
-+    GdkIosTextInputView *view = (GdkIosTextInputView *) gdk_ios_text_input_get_view ();
-+    UIKeyboardType kb = UIKeyboardTypeDefault;
-+    switch (type)
-+      {
-+      case GDK_IOS_KEYBOARD_NUMBER: kb = UIKeyboardTypeNumberPad; break;
-+      case GDK_IOS_KEYBOARD_DECIMAL: kb = UIKeyboardTypeDecimalPad; break;
-+      case GDK_IOS_KEYBOARD_PHONE: kb = UIKeyboardTypePhonePad; break;
-+      case GDK_IOS_KEYBOARD_URL: kb = UIKeyboardTypeURL; break;
-+      case GDK_IOS_KEYBOARD_EMAIL: kb = UIKeyboardTypeEmailAddress; break;
-+      default: break;
-+      }
-+    BOOL changed = view.gdkKeyboardType != kb || view.gdkSecure != (BOOL) secure ||
-+                   view.gdkAutocorrection != (autocorrect ? UITextAutocorrectionTypeDefault : UITextAutocorrectionTypeNo);
-+    view.gdkKeyboardType = kb;
-+    view.gdkSecure = secure;
-+    view.gdkAutocorrection = autocorrect ? UITextAutocorrectionTypeDefault : UITextAutocorrectionTypeNo;
-+    if (view.isFirstResponder)
-+      {
-+        if (changed)
-+          [view reloadInputViews];
-+      }
-+    else
-+      [view becomeFirstResponder];
-+  });
-+}
-+
-+void
-+gdk_ios_text_input_hide (void)
-+{
-+  gdk_ios_run_on_main_async (^{
-+    if (gdk_ios_text_input_view != nil && gdk_ios_text_input_view.isFirstResponder)
-+      [gdk_ios_text_input_view resignFirstResponder];
-+  });
-+}
-diff --git a/gdk/ios/meson.build b/gdk/ios/meson.build
-index a0f6ffa..a86f0e8 100644
---- a/gdk/ios/meson.build
-+++ b/gdk/ios/meson.build
-@@ -8,6 +8,7 @@ gdk_ios_sources = files([
-   'gdkioscairocontext.c',
-   'gdkiosseat.c',
-   'gdkiosevents.c',
-+  'gdkiostextinput.c',
- ])
- 
- gdk_ios_public_headers = files([
 diff --git a/gtk/gtkimcontextios.c b/gtk/gtkimcontextios.c
 new file mode 100644
 index 0000000..d710730
@@ -3634,6 +3695,231 @@ index 389a438..cc186dc 100644
  
    scope = g_io_module_scope_new (G_IO_MODULE_SCOPE_BLOCK_DUPLICATES);
  
+diff --git a/gtk/gtklistview.c b/gtk/gtklistview.c
+index d76f81f..8a61a4e 100644
+--- a/gtk/gtklistview.c
++++ b/gtk/gtklistview.c
+@@ -24,6 +24,7 @@
+ #include "gtkbitset.h"
+ #include "gtklistbaseprivate.h"
+ #include "gtklistheaderwidgetprivate.h"
++#include "gtklistitembaseprivate.h"
+ #include "gtklistitemmanagerprivate.h"
+ #include "gtklistitemwidgetprivate.h"
+ #include "gtkmultiselection.h"
+@@ -620,6 +621,7 @@ gtk_list_view_size_allocate (GtkWidget *widget,
+   GtkListTile *tile;
+   GArray *heights;
+   int min, nat, row_height, y, list_width, spacing;
++  guint position;
+   GtkOrientation orientation, opposite_orientation;
+   GtkScrollablePolicy scroll_policy, opposite_scroll_policy;
+ 
+@@ -668,7 +670,12 @@ gtk_list_view_size_allocate (GtkWidget *widget,
+         row_height = nat;
+       gtk_list_tile_set_area_size (self->item_manager, tile, list_width, row_height);
+       if (tile->type == GTK_LIST_TILE_ITEM)
+-        g_array_append_val (heights, row_height);
++        {
++          g_array_append_val (heights, row_height);
++          g_hash_table_insert (self->measured_heights,
++                               GUINT_TO_POINTER (gtk_list_item_base_get_position (GTK_LIST_ITEM_BASE (tile->widget))),
++                               GINT_TO_POINTER (row_height));
++        }
+     }
+ 
+   /* step 3: determine height of unknown items and set the positions */
+@@ -676,6 +683,7 @@ gtk_list_view_size_allocate (GtkWidget *widget,
+   g_array_free (heights, TRUE);
+ 
+   y = 0;
++  position = 0;
+   for (tile = gtk_list_item_manager_get_first (self->item_manager);
+        tile != NULL;
+        tile = gtk_rb_tree_node_get_next (tile))
+@@ -683,13 +691,26 @@ gtk_list_view_size_allocate (GtkWidget *widget,
+       gtk_list_tile_set_area_position (self->item_manager, tile, 0, y);
+       if (tile->widget == NULL)
+         {
++          /* Prefer the height an item was measured at while it was
++           * visible; only estimate the ones never seen. Otherwise the
++           * total jumps whenever a tall item (a page header) is scrolled
++           * out of the realized range and back. */
++          int tile_height = 0;
++          for (guint i = 0; i < tile->n_items; i++)
++            {
++              gpointer measured = g_hash_table_lookup (self->measured_heights,
++                                                       GUINT_TO_POINTER (position + i));
++              tile_height += measured != NULL ? GPOINTER_TO_INT (measured) : row_height;
++              if (i > 0)
++                tile_height += spacing;
++            }
+           gtk_list_tile_set_area_size (self->item_manager,
+                                        tile,
+                                        list_width,
+-                                       row_height * tile->n_items
+-                                       + spacing * (tile->n_items - 1));
++                                       tile_height);
+         }
+ 
++      position += tile->n_items;
+       y += tile->area.height + spacing;
+     }
+ 
+@@ -750,6 +771,7 @@ gtk_list_view_dispose (GObject *object)
+ 
+   g_clear_object (&self->factory);
+   g_clear_object (&self->header_factory);
++  g_clear_pointer (&self->measured_heights, g_hash_table_unref);
+ 
+   G_OBJECT_CLASS (gtk_list_view_parent_class)->dispose (object);
+ }
+@@ -1017,6 +1039,7 @@ static void
+ gtk_list_view_init (GtkListView *self)
+ {
+   self->item_manager = gtk_list_base_get_manager (GTK_LIST_BASE (self));
++  self->measured_heights = g_hash_table_new (g_direct_hash, g_direct_equal);
+ 
+   gtk_list_base_set_anchor_max_widgets (GTK_LIST_BASE (self),
+                                         GTK_LIST_VIEW_MAX_LIST_ITEMS,
+@@ -1079,9 +1102,21 @@ gtk_list_view_get_model (GtkListView *self)
+   return gtk_list_base_get_model (GTK_LIST_BASE (self));
+ }
+ 
++static void
++gtk_list_view_items_changed_cb (GListModel *model,
++                                guint       position,
++                                guint       removed,
++                                guint       added,
++                                GtkListView *self)
++{
++  /* Positions shift when items change, so remembered heights no longer
++   * line up with their rows. */
++  g_hash_table_remove_all (self->measured_heights);
++}
++
+ /**
+  * gtk_list_view_set_model:
+- * @self: a listview
++ * @self: a `GtkListView`
+  * @model: (nullable) (transfer none): the model to use
+  *
+  * Sets the model to use.
+@@ -1092,11 +1127,31 @@ void
+ gtk_list_view_set_model (GtkListView       *self,
+                          GtkSelectionModel *model)
+ {
++  GtkSelectionModel *previous;
++
+   g_return_if_fail (GTK_IS_LIST_VIEW (self));
+   g_return_if_fail (model == NULL || GTK_IS_SELECTION_MODEL (model));
+ 
++  previous = gtk_list_view_get_model (self);
++  if (previous)
++    g_object_ref (previous);
++
+   if (!gtk_list_base_set_model (GTK_LIST_BASE (self), model))
+-    return;
++    {
++      g_clear_object (&previous);
++      return;
++    }
++
++  if (previous)
++    {
++      g_signal_handlers_disconnect_by_func (previous, gtk_list_view_items_changed_cb, self);
++      g_object_unref (previous);
++    }
++
++  g_hash_table_remove_all (self->measured_heights);
++
++  if (model)
++    g_signal_connect (model, "items-changed", G_CALLBACK (gtk_list_view_items_changed_cb), self);
+ 
+   gtk_accessible_update_property (GTK_ACCESSIBLE (self),
+                                   GTK_ACCESSIBLE_PROPERTY_MULTI_SELECTABLE, GTK_IS_MULTI_SELECTION (model),
+diff --git a/gtk/gtklistviewprivate.h b/gtk/gtklistviewprivate.h
+index 7dd02ce..d5ab027 100644
+--- a/gtk/gtklistviewprivate.h
++++ b/gtk/gtklistviewprivate.h
+@@ -33,6 +33,11 @@ struct _GtkListView
+   GtkListItemFactory *header_factory;
+   gboolean show_separators;
+   gboolean single_click_activate;
++
++  /* position -> measured height of items that were realized at least
++   * once. Reused when an item is unrealized, so the total height estimate
++   * does not jump when a tall item (a page header) leaves the view. */
++  GHashTable *measured_heights;
+ };
+ 
+ struct _GtkListViewClass
+diff --git a/gtk/gtktext.c b/gtk/gtktext.c
+index 631e881..3711b69 100644
+--- a/gtk/gtktext.c
++++ b/gtk/gtktext.c
+@@ -2226,6 +2226,11 @@ begin_change (GtkText *self)
+ {
+   GtkTextPrivate *priv = gtk_text_get_instance_private (self);
+ 
++  /* Any edit (typing, backspace, an IME commit, paste) dismisses the
++   * touch selection bubble; on touch the key controller is not in the
++   * loop, so this is the only hook that sees all of them. */
++  gtk_text_selection_bubble_popup_unset (self);
++
+   priv->change_count++;
+ 
+   g_object_freeze_notify (G_OBJECT (self));
+@@ -6517,7 +6522,6 @@ gtk_text_selection_bubble_popup_show (gpointer user_data)
+   const int text_width = gtk_widget_get_width (GTK_WIDGET (self));
+   const int text_height = gtk_widget_get_height (GTK_WIDGET (self));
+   cairo_rectangle_int_t rect;
+-  graphene_point_t p;
+   gboolean has_selection;
+   int start_x, end_x;
+   GtkWidget *box;
+@@ -6541,6 +6545,7 @@ gtk_text_selection_bubble_popup_show (gpointer user_data)
+   gtk_widget_set_parent (priv->selection_bubble, GTK_WIDGET (self));
+   gtk_widget_add_css_class (priv->selection_bubble, "touch-selection");
+   gtk_popover_set_position (GTK_POPOVER (priv->selection_bubble), GTK_POS_BOTTOM);
++  gtk_popover_set_has_arrow (GTK_POPOVER (priv->selection_bubble), FALSE);
+   gtk_popover_set_autohide (GTK_POPOVER (priv->selection_bubble), FALSE);
+   g_signal_connect (priv->selection_bubble, "notify::visible",
+                     G_CALLBACK (show_or_hide_handles), self);
+@@ -6562,15 +6567,13 @@ gtk_text_selection_bubble_popup_show (gpointer user_data)
+ 
+   g_object_unref (model);
+ 
+-  if (!gtk_widget_compute_point (GTK_WIDGET (self), gtk_widget_get_parent (GTK_WIDGET (self)),
+-                                 &GRAPHENE_POINT_INIT (0, 0), &p))
+-    graphene_point_init (&p, 0, 0);
+-
+   gtk_text_get_cursor_locations (self, &start_x, NULL);
+ 
+   start_x -= priv->scroll_offset;
+   start_x = CLAMP (start_x, 0, text_width);
+-  rect.y = - p.y;
++  /* The popover is parented to the text widget, so the pointing rect is
++   * in its coordinates too. */
++  rect.y = 0;
+   rect.height = text_height;
+ 
+   if (has_selection)
+@@ -6578,12 +6581,12 @@ gtk_text_selection_bubble_popup_show (gpointer user_data)
+       end_x = gtk_text_get_selection_bound_location (self) - priv->scroll_offset;
+       end_x = CLAMP (end_x, 0, text_width);
+ 
+-      rect.x = - p.x + MIN (start_x, end_x);
++      rect.x = MIN (start_x, end_x);
+       rect.width = ABS (end_x - start_x);
+     }
+   else
+     {
+-      rect.x = - p.x + start_x;
++      rect.x = start_x;
+       rect.width = 0;
+     }
+ 
 diff --git a/gtk/meson.build b/gtk/meson.build
 index df3a08c..9a8d88d 100644
 --- a/gtk/meson.build
@@ -3651,6 +3937,51 @@ index df3a08c..9a8d88d 100644
  if not (x11_enabled or win32_enabled)
    gtk_sources += ['gtkmountoperation-stub.c', ]
  endif
--- 
-2.54.0
-
+diff --git a/meson.build b/meson.build
+index 49a65a9..11bba40 100644
+--- a/meson.build
++++ b/meson.build
+@@ -118,6 +118,7 @@ broadway_enabled = get_option('broadway-backend')
+ macos_enabled    = get_option('macos-backend')
+ win32_enabled    = get_option('win32-backend')
+ android_enabled  = get_option('android-backend')
++ios_enabled      = get_option('ios-backend')
+ vulkan_enabled   = get_option('vulkan')
+ 
+ os_unix   = false
+@@ -134,7 +135,10 @@ cc = meson.get_compiler('c')
+ # to ensure they are enabled
+ if host_machine.system() == 'darwin'
+ 
+-  if not cc.compiles('''
++  if host_machine.subsystem() != 'macos'
++    # iOS and friends: no macOS SDK check, no AppKit-based backend
++    macos_enabled = false
++  elif not cc.compiles('''
+     #include <Availability.h>
+     #if __MAC_OS_X_VERSION_MIN_REQUIRED < 101500L
+     # error message "Minimal macOS SDK version not met"
+@@ -160,6 +164,7 @@ if os_darwin
+   x11_enabled = false
+ else
+   macos_enabled = false
++  ios_enabled = false
+ endif
+ 
+ if os_win32
+diff --git a/meson.options b/meson.options
+index cb663bd..b9642aa 100644
+--- a/meson.options
++++ b/meson.options
+@@ -29,6 +29,11 @@ option('macos-backend',
+        value: true,
+        description : 'Enable the macOS gdk backend (only when building on macOS)')
+ 
++option('ios-backend',
++       type: 'boolean',
++       value: false,
++       description : 'Enable the iOS gdk backend (UIKit)')
++
+ option('android-backend',
+        type: 'boolean',
+        value: true,

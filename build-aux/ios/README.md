@@ -2,12 +2,15 @@
 
 GTK has no iOS backend, so this directory carries one plus the build flow
 that gets a GTK 4 app into the iPhone simulator. State of things: Cassette
-runs in the simulator with a signed-in session (stations, playlists,
-artwork, search, playback through AVPlayer, Russian UI, on-screen
-keyboard); the WKWebView sign-in opens but was not driven to the end.
-Not done: real devices (signing), app icon, media keys/lock screen
-(MPRemoteCommandCenter is wired but untested), background audio checks,
-GL rendering, clipboard.
+runs in the simulator and on a real device (signed with a development
+profile) with a signed-in session (stations, playlists, artwork, search,
+playback through AVPlayer, Russian UI, on-screen keyboard, copy/paste);
+the WKWebView sign-in opens but was not driven to the end. The app icon
+is a layered asset catalog (`assets/`) with light/dark/tinted variants,
+compiled by `actool` in the package scripts. Not done: media keys/lock
+screen (MPRemoteCommandCenter is wired but untested), background audio
+checks, GL rendering, App Store distribution (needs a distribution
+profile and, for TestFlight, an App Store Connect app record).
 
 ## Layout
 
@@ -41,7 +44,12 @@ GL rendering, clipboard.
   return become key events; the root view shrinks toplevels above the
   keyboard (safe area minus keyboard frame). `gdk_ios_set_bars_colors()`
   paints the status-bar and home-indicator strips.
-- Missing: GL/Metal, clipboard, `CADisplayLink` frame pacing, real devices.
+- Clipboard: `gdkiosclipboard.c`, a `GdkClipboard` over
+  `UIPasteboard`'s general pasteboard. It advertises text unconditionally
+  (asking `hasStrings` would raise the iOS paste alert before the user
+  pasted) and polls `changeCount` to notice content copied elsewhere.
+  Reading triggers the system "allow paste" alert once per source.
+- Missing: GL/Metal, `CADisplayLink` frame pacing, real devices.
 
 ## Cassette
 
@@ -86,8 +94,11 @@ xcrun simctl spawn <udid> log show --last 1m --predicate 'process == "Hello"'
 Do not launch with `--console-pty` and then kill simctl: the app dies with
 it. GLib messages are mirrored to `NSLog`, so `log show` sees them.
 `SIMCTL_CHILD_GDK_IOS_DEBUG_TAPS="x,y,ms;…"` synthesizes taps (points) for
-checks without a hand on the simulator. Crash reports land in
-`~/Library/Logs/DiagnosticReports/Hello-*.ips`.
+checks without a hand on the simulator; an optional fourth field is the
+hold duration in ms (`x,y,ms,hold`, e.g. for long-press selection
+bubbles). `SIMCTL_CHILD_GDK_IOS_DEBUG_DRAGS="x1,y1,x2,y2,ms;…"`
+synthesizes a touch drag after `ms` (scrolling checks). Crash reports land
+in `~/Library/Logs/DiagnosticReports/Hello-*.ips`.
 
 Gotchas met on the way: `sassc` must be native (`brew install sassc`);
 libepoxy/pixman tests and OpenMP are disabled in the cross build; the iOS

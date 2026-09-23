@@ -108,6 +108,11 @@ namespace Cassette {
     }
 
     public void remove_track_from_playlist (YaMAPI.Track track_info, YaMAPI.Playlist playlist_info) {
+        if (yam_talker.is_my_liked (playlist_info.uid, playlist_info.kind)) {
+            yam_talker.unlike.begin (LikableType.TRACK, track_info.id);
+            return;
+        }
+
         int position = -1;
         for (int i = 0; i < playlist_info.tracks.size; i++) {
             if (track_info.id == playlist_info.tracks[i].id) {

@@ -50,28 +50,51 @@ public abstract class Cassette.Reactable : Gtk.Frame {
         }
     }
 
+    /**
+     * Whether the pointer is on the row. Desktop follows the mouse; on
+     * touch it follows the finger (press), so the hover state can never
+     * trail a scroll gesture onto other rows.
+     */
+    public bool hovered { get; private set; default = false; }
+
     construct {
+        // Touch has no hover: on mobile the highlight belongs to the cell
+        // under the finger, not to the one scrolling past underneath it.
+#if !ANDROID && !IOS
         var gs_hover = new Gtk.EventControllerMotion ();
         gs_hover.enter.connect (() => {
             add_css_class (css_class_name_hover);
+            hovered = true;
         });
         gs_hover.leave.connect (() => {
             remove_css_class (css_class_name_hover);
+            hovered = false;
         });
         add_controller (gs_hover);
+#endif
 
         var gs_active = new Gtk.GestureClick ();
         gs_active.pressed.connect (() => {
             add_css_class (css_class_name_active);
+#if ANDROID || IOS
+            hovered = true;
+#endif
         });
         gs_active.stopped.connect (() => {
             remove_css_class (css_class_name_active);
+#if ANDROID || IOS
+            hovered = false;
+#endif
         });
         gs_active.released.connect (() => {
             remove_css_class (css_class_name_active);
+#if ANDROID || IOS
+            hovered = false;
+#endif
         });
         add_controller (gs_active);
 
+#if !ANDROID && !IOS
         var gs_playing_hover = new Gtk.EventControllerMotion ();
         gs_playing_hover.enter.connect (() => {
             if (is_current_playing) {
@@ -84,6 +107,7 @@ public abstract class Cassette.Reactable : Gtk.Frame {
             }
         });
         add_controller (gs_playing_hover);
+#endif
 
         var gs_playing_active = new Gtk.GestureClick ();
         gs_playing_active.pressed.connect (() => {

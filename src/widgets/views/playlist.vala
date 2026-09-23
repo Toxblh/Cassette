@@ -191,6 +191,23 @@ namespace Cassette {
                 }
             });
 
+            yam_talker.track_likes_end_change.connect ((track_id, is_liked) => {
+                if (is_liked || object_info == null || !yam_talker.is_my_liked (uid, kind)) {
+                    return;
+                }
+
+                var playlist_info = (YaMAPI.Playlist) object_info;
+
+                for (int i = 0; i < playlist_info.tracks.size; i++) {
+                    if (playlist_info.tracks[i].id == track_id) {
+                        playlist_info.tracks.remove_at (i);
+                        playlist_info.track_count = playlist_info.tracks.size;
+                        set_values ();
+                        break;
+                    }
+                }
+            });
+
             block_widget (edit_button, BlockReason.NOT_IMPLEMENTED);
             block_widget (like_button, BlockReason.NOT_IMPLEMENTED);
         }

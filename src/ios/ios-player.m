@@ -148,10 +148,13 @@ cassette_ios_player_init (CassetteIosPlayerEvent on_event, CassetteIosPlayerErro
 void
 cassette_ios_player_set_uri (const char *uri)
 {
-  NSString *nsuri = uri != NULL ? [NSString stringWithUTF8String:uri] : nil;
+  char *uri_copy = uri != NULL ? g_strdup (uri) : NULL;
   char *link_path = NULL;
 
-  /* Keep local files alive for as long as we play them. */
+  /* Keep local files alive for as long as we play them. The whole file
+   * lifecycle (link/copy + old-file cleanup) happens here on the GTK thread,
+   * atomically, so the AVPlayer on the main thread never sees a
+   * half-written file. */
   if (uri != NULL && (g_str_has_prefix (uri, "file://") || uri[0] == '/'))
     {
       char *path = uri[0] == '/' ? g_strdup (uri) : g_filename_from_uri (uri, NULL, NULL);
@@ -159,15 +162,24 @@ cassette_ios_player_set_uri (const char *uri)
         {
           char *dir = g_build_filename (g_get_user_cache_dir (), "playing", NULL);
           g_mkdir_with_parents (dir, 0755);
-          link_path = g_build_filename (dir, g_path_get_basename (path), NULL);
+          link_path = g_build_filename (dir, "track.mp3", NULL);
           unlink (link_path);
           if (link (path, link_path) != 0)
             {
-              /* different volume or already gone: fall back to a copy */
+              /* hardlink failed (volume/fs): copy to a temp name and rename
+               * into place so the reader only ever sees a complete file. */
+              char *tmp = g_strdup_printf ("%s.tmp", link_path);
+              unlink (tmp);
               GFile *src = g_file_new_for_path (path);
-              GFile *dst = g_file_new_for_path (link_path);
-              if (!g_file_copy (src, dst, G_FILE_COPY_OVERWRITE, NULL, NULL, NULL, NULL))
+              GFile *dst = g_file_new_for_path (tmp);
+              if (g_file_copy (src, dst, G_FILE_COPY_OVERWRITE, NULL, NULL, NULL, NULL))
+                {
+                  if (rename (tmp, link_path) != 0)
+                    g_clear_pointer (&link_path, g_free);
+                }
+              else
                 g_clear_pointer (&link_path, g_free);
+              g_free (tmp);
               g_object_unref (src);
               g_object_unref (dst);
             }
@@ -176,12 +188,19 @@ cassette_ios_player_set_uri (const char *uri)
         }
     }
 
-  NSString *play_path = link_path != NULL ? [NSString stringWithUTF8String:link_path] : nil;
-  on_main_sync (^{
+  /* The old linked file was already unlinked by unlink(link_path) above (the
+   * path is the same for every track); just swap the tracked path. */
+  g_free (g_linked_file);
+  g_linked_file = link_path != NULL ? g_strdup (link_path) : NULL;
+
+  /* AVPlayer work must happen on the main thread, but never block the GTK
+   * thread on it. The block owns uri_copy/link_path and frees them. */
+  on_main (^{
     ensure_player ();
     g_last_position_ms = 0;
-    drop_linked_file ();
-    g_linked_file = link_path;
+
+    NSString *nsuri = uri_copy != NULL ? [NSString stringWithUTF8String:uri_copy] : nil;
+    NSString *play_path = link_path != NULL ? [NSString stringWithUTF8String:link_path] : nil;
 
     AVPlayerItem *item = nil;
     if (play_path != nil)
@@ -191,6 +210,9 @@ cassette_ios_player_set_uri (const char *uri)
     [g_player replaceCurrentItemWithPlayerItem:item];
     if (g_want_playing && item != nil)
       [g_player play];
+
+    g_free (uri_copy);
+    g_free (link_path);
   });
 }
 
@@ -217,12 +239,12 @@ cassette_ios_player_pause (void)
 void
 cassette_ios_player_stop (void)
 {
+  drop_linked_file ();
   on_main (^{
     g_want_playing = NO;
     [g_player pause];
     [g_player replaceCurrentItemWithPlayerItem:nil];
     g_last_position_ms = 0;
-    drop_linked_file ();
   });
 }
 

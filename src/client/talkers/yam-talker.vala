@@ -651,7 +651,9 @@ namespace Cassette.Client {
 
             yield;
 
-            playlist_changed (new_playlist);
+            if (new_playlist != null) {
+                playlist_changed (new_playlist);
+            }
 
             return new_playlist;
         }

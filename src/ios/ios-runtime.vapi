@@ -12,3 +12,9 @@ public extern unowned string cassette_ios_bundle_path ();
 
 [CCode (cname = "gdk_ios_set_bars_colors", cheader_filename = "gdk/ios/gdkios.h")]
 public extern void gdk_ios_set_bars_colors (uint32 top_argb, uint32 bottom_argb);
+
+[CCode (cname = "gdk_ios_get_safe_area", cheader_filename = "gdk/ios/gdkios.h")]
+public extern void gdk_ios_get_safe_area (out int top, out int bottom, out int left, out int right);
+
+[CCode (cname = "cassette_ios_stalls_start", cheader_filename = "ios-stalls.h")]
+public extern void cassette_ios_stalls_start ();

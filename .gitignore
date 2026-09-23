@@ -29,6 +29,7 @@ Cassette.app
 /.cache/
 /apks/
 /build-aux/android/ui/
+/build-aux/ios/fastlane/.env
 /subprojects/*.wrap
 /subprojects/packagecache/
 /subprojects/packagefiles/
@@ -54,6 +55,8 @@ Cassette.app
 /subprojects/libsoup/
 /subprojects/libxml2-*/
 /subprojects/ministream/
+/subprojects/ministream-*/
+/subprojects/.wraplock
 /subprojects/nghttp2-*/
 /subprojects/openssl-*/
 /subprojects/pango/
@@ -61,4 +64,5 @@ Cassette.app
 /subprojects/pixman-*/
 /subprojects/proxy-libintl-*/
 /subprojects/sqlite-amalgamation-*/
+/subprojects/sysprof/
 /subprojects/tiff-*/

@@ -20,5 +20,11 @@ public final class Native {
 		nativeInit(context.getApplicationContext());
 	}
 
+	/** Android Automotive (a car head unit), as opposed to a phone. */
+	public static boolean isAutomotive() {
+		return NativeContext.get().getPackageManager()
+				.hasSystemFeature(android.content.pm.PackageManager.FEATURE_AUTOMOTIVE);
+	}
+
 	private static native void nativeInit(Context context);
 }

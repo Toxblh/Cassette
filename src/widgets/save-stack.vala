@@ -88,6 +88,9 @@ namespace Cassette {
                     }
                 });
             }
+
+            // The empty "none" page must not swallow taps meant for the row.
+            can_target = false;
         }
 
         public void clear () {
@@ -125,7 +128,12 @@ namespace Cassette {
                     break;
                 case Cachier.CacheingState.LOADING:
                     save_stack.visible_child_name = "loading";
+#if !ANDROID && !IOS
+                    // The spinner redraws the whole window every frame, which
+                    // the software-rendered mobile backends pay for with a
+                    // full-surface copy; keep it static there.
                     save_spin.start ();
+#endif
                     break;
                 case Cachier.CacheingState.TEMP:
                     if (Cassette.settings.get_boolean ("show-temp-save-mark") || show_anyway) {
@@ -140,6 +148,8 @@ namespace Cassette {
                     save_spin.stop ();
                     break;
             }
+
+            can_target = save_stack.visible_child_name != "none";
         }
     }
 }

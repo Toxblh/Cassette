@@ -201,6 +201,12 @@ namespace Cassette {
             scrolled_window.child = null;
             header_widget = content;
             scrolled_window.child = this;
+
+            if (Environment.get_variable ("CASSETTE_DEBUG_SCROLL") != null) {
+                vadjustment.value_changed.connect (() => {
+                    debug ("scrollpos %.2f upper %.2f page %.2f", vadjustment.value, vadjustment.upper, vadjustment.page_size);
+                });
+            }
         }
 
         // Gtk.ListView keeps the first visible item in place when items are
@@ -502,6 +508,8 @@ namespace Cassette {
         Gtk.Widget clamp_row (Gtk.Widget row) {
             return new Adw.Clamp () {
                 maximum_size = row_maximum_size,
+                margin_start = 12,
+                margin_end = 12,
                 child = row
             };
         }

@@ -66,10 +66,69 @@ public sealed class Cassette.CoverImage : Gtk.Frame {
     public void clear () {
         yam_object = null;
         remove_css_class ("card");
+        reset_image ();
+    }
+
+    /** Drop whatever cover is shown and go back to the placeholder icon. */
+    void reset_image () {
+        for (var child = stack.get_first_child (); child != null; )
+            {
+                var next = child.get_next_sibling ();
+                if (child != placeholder_image)
+                    stack.remove (child);
+                child = next;
+            }
+
+        stack.visible_child = placeholder_image;
+    }
+
+    /**
+     * GdkPixbuf is straight RGBA, but the cairo renderer draws
+     * premultiplied BGRA. Converting here once keeps every frame from
+     * running a blocking conversion for each cover it draws.
+     */
+    public static Gdk.Texture texture_for_pixbuf (Gdk.Pixbuf pixbuf) {
+        int width = pixbuf.get_width ();
+        int height = pixbuf.get_height ();
+        int channels = pixbuf.get_n_channels ();
+        int source_stride = pixbuf.get_rowstride ();
+        bool has_alpha = pixbuf.get_has_alpha ();
+        unowned uint8[] source = pixbuf.get_pixels ();
+        int stride = width * 4;
+        var target = new uint8[stride * height];
+
+        for (int y = 0; y < height; y++) {
+            int source_row = y * source_stride;
+            int target_row = y * stride;
+
+            for (int x = 0; x < width; x++) {
+                int si = source_row + x * channels;
+                int ti = target_row + x * 4;
+                uint8 r = source[si];
+                uint8 g = source[si + 1];
+                uint8 b = source[si + 2];
+                uint8 a = has_alpha ? source[si + 3] : 255;
+
+                target[ti] = (uint8) ((b * a) / 255);
+                target[ti + 1] = (uint8) ((g * a) / 255);
+                target[ti + 2] = (uint8) ((r * a) / 255);
+                target[ti + 3] = a;
+            }
+        }
+
+        return new Gdk.MemoryTexture (
+            width, height, Gdk.MemoryFormat.B8G8R8A8_PREMULTIPLIED,
+            new Bytes.take (target), stride
+        );
     }
 
     public async void load_image () {
         assert (yam_object != null);
+
+        /* The widget is reused (the player bar, recycled list rows): never
+         * keep the previous track's cover while this one loads, and leave
+         * the placeholder if it has no cover at all. */
+        reset_image ();
 
         Gdk.Pixbuf? pixbuf_buffer = null;
 
@@ -77,7 +136,7 @@ public sealed class Cassette.CoverImage : Gtk.Frame {
 
         if (pixbuf_buffer != null) {
             var real_image = new Gtk.Image ();
-            real_image.set_from_paintable (Gdk.Texture.for_pixbuf (pixbuf_buffer));
+            real_image.set_from_paintable (texture_for_pixbuf (pixbuf_buffer));
 
             bind_property (
                 "image-widget-size",

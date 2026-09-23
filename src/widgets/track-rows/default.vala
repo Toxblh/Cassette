@@ -75,26 +75,24 @@ namespace Cassette {
                 if (play_mark_track.is_current_playing) {
                     info_panel.show_play_button ();
 
-                } else {
+                } else if (!hovered) {
                     info_panel.show_cover ();
                 }
             });
 
-            var motion_controller = new Gtk.EventControllerMotion ();
-            add_controller (motion_controller);
+            notify["hovered"].connect (() => {
+                if (hovered) {
+                    info_panel.show_play_button ();
+
+                } else if (!play_mark_track.is_current_playing) {
+                    info_panel.show_cover ();
+                }
+            });
 
             info_panel.track_info = track_info;
 
             if (track_info.available) {
                 duration_label.label = ms2str (track_info.duration_ms, true);
-                motion_controller.enter.connect ((mc, x, y) => {
-                    info_panel.show_play_button ();
-                });
-                motion_controller.leave.connect ((mc) => {
-                    if (!play_mark_track.is_current_playing) {
-                        info_panel.show_cover ();
-                    }
-                });
 
             } else {
                 add_css_class ("not-available");

@@ -142,7 +142,8 @@ public abstract class Cassette.CustomMenuButton : ShrinkableBin {
         }
 
         return new Gtk.Popover () {
-            child = box
+            child = box,
+            has_arrow = false
         };
     }
 

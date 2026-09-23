@@ -175,6 +175,7 @@ if is_ios
     'macos/now-playing.vala',
     'ios/ios-runtime.m',
     'ios/ios-runtime.vapi',
+    'ios/ios-stalls.c',
     'ios/ios-player.m',
     'ios/ios-player.vapi',
     'ios/ios-auth.m',
@@ -214,6 +215,8 @@ if is_android
   cassette_sources += files(
     'android/android-auth.c',
     'android/android-auth.vapi',
+    'android/android-auto.c',
+    'android/android-auto.vapi',
     'android/android-bars.c',
     'android/android-bars.vapi',
     'android/android-jni.c',
@@ -223,6 +226,7 @@ if is_android
     'android/android-now-playing.vapi',
     'android/android-player.c',
     'android/android-player.vapi',
+    'android/auto-browser.vala',
     'android/now-playing.vala',
   )
   cassette_link_args += ['-llog']

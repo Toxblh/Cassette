@@ -34,8 +34,8 @@ namespace Cassette {
 
     public enum ApplicationState {
         BEGIN,
-        LOCAL,
         ONLINE,
+        LOCAL,
         OFFLINE
     }
 
@@ -233,6 +233,61 @@ namespace Cassette {
             // CASSETTE_DEBUG_FONT_NAME overrides the UI font for font-stack tests.
             Gtk.Settings.get_default ().gtk_font_name =
                 Environment.get_variable ("CASSETTE_DEBUG_FONT_NAME") ?? "Inter 11";
+
+            // Touch needs a more forgiving long-press: the stock 8px slop
+            // cancels it (and the selection bubble) on the smallest finger
+            // movement, and 500ms is long on glass.
+            var gtk_settings = Gtk.Settings.get_default ();
+            gtk_settings.gtk_dnd_drag_threshold = 16;
+            gtk_settings.gtk_long_press_time = 400;
+
+            // The text selection bubble is built by GtkText: on touch the
+            // stock paddings waste the little room there is, so tighten it
+            // and enlarge the icons. Touch-only, hence mobile-only.
+            // Entries get the same touch height as the player seek bar.
+            var bubble_css = new Gtk.CssProvider ();
+            bubble_css.load_from_string ("""
+                entry {
+                    min-height: 44px;
+                }
+                /* Keep the view switcher off the home-indicator edge. */
+                viewswitcherbar {
+                    padding-bottom: 8px;
+                }
+                /* A little air above the icons, in iPhone portrait only. */
+                viewswitcherbar.portrait-pad {
+                    padding-top: 8px;
+                }
+                popover.touch-selection > contents {
+                    padding: 4px;
+                }
+                popover.touch-selection box {
+                    margin: 0;
+                }
+                popover.touch-selection button {
+                    background: none;
+                    background-image: none;
+                    box-shadow: none;
+                    border: none;
+                    min-width: 44px;
+                    min-height: 44px;
+                    padding: 0;
+                }
+                popover.touch-selection button:hover,
+                popover.touch-selection button:active {
+                    background-color: rgba(255, 255, 255, 0.12);
+                    border-radius: 10px;
+                }
+                popover.touch-selection button image {
+                    -gtk-icon-size: 26px;
+                }
+            """);
+            var display = Gdk.Display.get_default ();
+            if (display != null) {
+                Gtk.StyleContext.add_provider_for_display (
+                    display, bubble_css, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION + 1
+                );
+            }
 #endif
 
             if (main_window == null) {
@@ -251,6 +306,15 @@ namespace Cassette {
                 });
 
                 main_window.present ();
+
+#if ANDROID
+                // A car head unit's status bar and dock are opaque and the
+                // app cannot draw under them, so go immersive there and use
+                // the whole display.
+                if (cassette_android_is_automotive ()) {
+                    main_window.fullscreen ();
+                }
+#endif
 
                 if (_application_state == ApplicationState.LOCAL) {
                     main_window.load_local_views ();
